@@ -120,7 +120,7 @@ def _shape_from_onnx_value_info(v):  # type: (ValueInfoProto) -> Sequence[Tuple[
 def _coreml_forward_model(model,  # type: ModelProto
                           input_dict,  # type: Dict[Text, np._ArrayLike[Any]]
                           output_names,  # type: Sequence[Text]
-                          minimum_ios_deployment_target='12'
+                          minimum_ios_deployment_target='13'
                           ):
     # type: (...) -> np.ndarray[Any]
     if not SupportedVersion.is_nd_array_supported(minimum_ios_deployment_target):
@@ -255,7 +255,7 @@ def _test_single_node(op_type,  # type: Text
                       test_name = '', # type: Text
                       onnx_coreml_input_shape_map = {}, # type: Dict[Text, List[int,...]]
                       coreml_input_shape = {}, # type: Dict[Text, List[int,...]]
-                      minimum_ios_deployment_target='12',
+                      minimum_ios_deployment_target='13',
                       **kwargs  # type: Any
                       ):
     # type: (...) -> None

@@ -10,6 +10,7 @@ from onnx import TensorProto
 
 from ._graph import Graph, Node
 
+
 def _get_fully_defined_shape(shape, blob_name, graph):
     if not np.any(shape == -1):
         return shape
@@ -17,6 +18,7 @@ def _get_fully_defined_shape(shape, blob_name, graph):
         return shape
     else:
         return graph.shape_dict[blob_name]
+
 
 def _remove_single_input_output_node(node):
     for child in node.children:
@@ -38,10 +40,12 @@ def _remove_single_input_output_node(node):
     for parent in node.parents:
         parent.children.remove(node)
 
+
 class NodesFuser(object):
     '''
     An abstract helper for merging nodes
     '''
+
     def __init__(self,
                  num_nodes,  # type: int
                  ):
@@ -111,10 +115,12 @@ class NodesFuser(object):
         nodes[0].outputs = nodes[-1].outputs
         return [nodes[0]]
 
+
 class ConvAddFuser(NodesFuser):
     '''
     Fuses Add layer into parent convolution layer.
     '''
+
     def __init__(self):  # type: () -> None
         super(ConvAddFuser, self).__init__(2)
 
@@ -152,7 +158,7 @@ class ConvAddFuser(NodesFuser):
             bias_input_name = parent.inputs[2]
             bias = parent.input_tensors[bias_input_name]
         else:
-            bias_input_name = "{}_bias".format(parent.name,)
+            bias_input_name = "{}_bias".format(parent.name, )
             parent.inputs.append(bias_input_name)
             bias = np.zeros(
                 (output_channels,), dtype=np.float32
@@ -165,10 +171,12 @@ class ConvAddFuser(NodesFuser):
         child.parents.remove(parent)
         return [parent]
 
+
 class BNBroadcastedMulFuser(NodesFuser):
     '''
     Fuses Mul into BatchNorm
     '''
+
     def __init__(self):  # type: () -> None
         super(BNBroadcastedMulFuser, self).__init__(2)
 
@@ -203,10 +211,12 @@ class BNBroadcastedMulFuser(NodesFuser):
         child.parents.remove(parent)
         return [parent]
 
+
 class BNBroadcastedAddFuser(NodesFuser):
     '''
     Fuses Add into BatchNorm
     '''
+
     def __init__(self):  # type: () -> None
         super(BNBroadcastedAddFuser, self).__init__(2)
 
@@ -239,10 +249,12 @@ class BNBroadcastedAddFuser(NodesFuser):
         child.parents.remove(parent)
         return [parent]
 
+
 class DropoutRemover(NodesFuser):
     '''
     Removes Dropout layer
     '''
+
     def __init__(self):  # type: () -> None
         super(DropoutRemover, self).__init__(2)
 
@@ -256,6 +268,7 @@ class DropoutRemover(NodesFuser):
         child.parents.remove(parent)
         parent.outputs = [child.outputs[0]]
         return [parent]
+
 
 class ReshapeInitTensorFuser(object):
     '''
@@ -294,7 +307,7 @@ class ReshapeInitTensorFuser(object):
             if 'shape' in node.attrs:
                 shape = tuple(node.attrs["shape"])
             else:
-                shape = node.input_tensors[shape_name] # type: ignore
+                shape = node.input_tensors[shape_name]  # type: ignore
 
             # ONNX spec supports setting dimension to '0', in which case
             # it should be taken from old dimension.
@@ -312,10 +325,12 @@ class ReshapeInitTensorFuser(object):
         transformed_nodes = [node for node in nodes if node not in removed]
         return graph.create_graph(nodes=transformed_nodes)
 
+
 class OutputRenamer(object):
     '''
     Rename outputs according to mapping
     '''
+
     def __init__(self,
                  mapping,  # type: Dict[Text, Text]
                  ):
@@ -342,10 +357,12 @@ class OutputRenamer(object):
                     break
         return graph
 
+
 class ReshapeTransposeReshape_pattern1(NodesFuser):
     '''
     Detects certain types of patterns of "reshape-> (rank 6) -> transpose (rank 6) -> reshape (rank 4)" that can be converted
     '''
+
     def __init__(self):  # type: () -> None
         super(ReshapeTransposeReshape_pattern1, self).__init__(3)
         self.num_added = 0
@@ -354,7 +371,7 @@ class ReshapeTransposeReshape_pattern1(NodesFuser):
         if not (nodes[0].op_type == 'Reshape' and nodes[1].op_type == 'Transpose' and nodes[2].op_type == 'Reshape'):
             return False
         if len(nodes[0].inputs) == 1 or len(nodes[2].inputs) == 1:
-            return False # it's an old version of onnx Reshape op that had shape as an attribute
+            return False  # it's an old version of onnx Reshape op that had shape as an attribute
         if nodes[0].inputs[1] not in nodes[0].input_tensors:
             return False
         if nodes[2].inputs[1] not in nodes[2].input_tensors:
@@ -379,7 +396,7 @@ class ReshapeTransposeReshape_pattern1(NodesFuser):
         consecutive_indices = False
         perm = perm[1:]
         for i in range(1, 5):
-            if perm[i] - perm[i-1] == 1:
+            if perm[i] - perm[i - 1] == 1:
                 consecutive_indices = True
                 break
 
@@ -404,7 +421,6 @@ class ReshapeTransposeReshape_pattern1(NodesFuser):
         transpose_1 = nodes[1]
         final_reshape = nodes[2]
 
-
         shape_1 = reshape_1.input_tensors[reshape_1.inputs[1]]
         shape_1 = _get_fully_defined_shape(shape_1, nodes[0].outputs[0], graph)
         shape_1 = shape_1[1:]
@@ -414,13 +430,13 @@ class ReshapeTransposeReshape_pattern1(NodesFuser):
         # now perm is length 5 list
 
         new_perm = []
-        new_shape = [1,1,1,1]
+        new_shape = [1, 1, 1, 1]
         i = 0
         found_consecutive_pair = False
         while i < 5:
-            if not found_consecutive_pair and i < 4 and perm[i+1] - perm[i] == 1:
+            if not found_consecutive_pair and i < 4 and perm[i + 1] - perm[i] == 1:
                 new_perm.append(perm[i])
-                new_shape[perm[i]] = shape_1[perm[i]] * shape_1[perm[i+1]]
+                new_shape[perm[i]] = shape_1[perm[i]] * shape_1[perm[i + 1]]
                 i = i + 2
                 found_consecutive_pair = True
                 continue
@@ -434,6 +450,152 @@ class ReshapeTransposeReshape_pattern1(NodesFuser):
 
         return [reshape_1, transpose_1, final_reshape]
 
+
+class PytorchUnfoldFuser(NodesFuser):
+    '''
+    Unfold is implemented using following operators:
+        - Pad                           --> rank 4 (B, C, H1, W1)
+        =====
+        - Gather_1(dim=2)               --> rank 5 (B, C, kh, H2, W1)
+        - Gather_2(dim=4)               --> rank 6 (B, C, kh, H2, kw, W2)
+        - Transpose(0, 1, 2, 4, 3, 5)   --> rank 6 (B, C, kh, kw, H2, W2)
+        =====
+        - Reshape                       --> rank 3 (B, C*kh*kw, H2*W2)
+
+    CoreML Reshape and Transpose layers don't support tensors with more than 4 dimensions.
+    So we replace it with following:
+        - Pad                     --> rank 4 (B, C, H, W1)
+        =====
+        - Gather_1(dim=2)         --> rank 5 (B, C, kh, H1, W1)
+        - Reshape_1               --> rank 3 (B, C*kh*H2, W1)
+        - Gather_2(dim=2)         --> rank 4 (B, C*kh*H2, kw, W2)
+        - Transpose_1(0, 1, 3, 2) --> rank 4 (B, C*kh*H2, W2, kw)
+        - Reshape_2               --> rank 4 (B, C*kh, H2*W2, kw)
+        - Transpose_2(0, 1, 3, 2) --> rank 4 (B, C*kh, kw, H2*W2)
+        =====
+        - Reshape_3               --> rank 3 (B, C*kh*kw, H2*W2)
+    '''
+
+    def __init__(self):  # type: () -> None
+        super(PytorchUnfoldFuser, self).__init__(4)
+        self.num_added = 0
+        self.fuse_calls = 0
+        self.op_pattern = ['Gather', 'Gather', 'Transpose', 'Reshape']
+
+    def is_eligible(self, graph, nodes):  # type: (Graph, Sequence[Node]) -> bool
+        if [n.op_type for n in nodes] != self.op_pattern:
+            return False
+        node_gather1, node_gather2, node_transpose, node_reshape = nodes
+
+        input_shape = _get_fully_defined_shape((-1), node_gather1.inputs[0], graph)
+        out_shape_gather1 = _get_fully_defined_shape((-1), node_gather1.outputs[0], graph)
+        out_shape_gather2 = _get_fully_defined_shape((-1), node_gather2.outputs[0], graph)
+        out_shape_transpose = _get_fully_defined_shape((-1), node_transpose.outputs[0], graph)
+        out_shape_reshape = _get_fully_defined_shape((-1), node_reshape.outputs[0], graph)
+
+        if len(out_shape_gather1) != 5:
+            return False
+        if len(out_shape_gather2) != 6:
+            return False
+        if len(out_shape_transpose) != 6:
+            return False
+        if len(out_shape_reshape) != 3:
+            return False
+
+        return True
+
+    def get_unique_edge_name(self, graph, name):  # type: (Graph, Text) -> Text
+        self.num_added += 1
+        return graph.get_unique_edge_name(name + '_' + str(self.num_added))
+
+    def merge(self, graph, nodes):  # type: (Graph, Sequence[Node]) -> Sequence[Node]
+        node_gather1, node_gather2, node_transpose, node_reshape = nodes
+
+        input_shape = _get_fully_defined_shape((-1), node_gather1.inputs[0], graph)
+        out_shape_gather1 = _get_fully_defined_shape((-1), node_gather1.outputs[0], graph)
+        out_shape_gather2 = _get_fully_defined_shape((-1), node_gather2.outputs[0], graph)
+        # out_shape_transpose = _get_fully_defined_shape((-1), node_transpose.outputs[0], graph)
+        # out_shape_reshape = _get_fully_defined_shape((-1), node_reshape.outputs[0], graph)
+
+        B, C, H0, W0 = input_shape
+        _, _, kh, H1, W1 = out_shape_gather1
+        _, _, _, _, kw, W2 = out_shape_gather2
+
+        op_name = 'FusedUnfold_' + str(self.fuse_calls)
+        self.fuse_calls += 1
+
+        # - Gather_1(dim=2)         --> rank 5 (B, C, kh, H1, W0)
+        op1_name = self.get_unique_edge_name(graph, op_name + '_op_gather1')
+        op1 = Node(op1_name, 'Gather',
+                   node_gather1.attrs,
+                   node_gather1.inputs,
+                   [op1_name + '_out'])
+        op1.input_tensors = node_gather1.input_tensors
+        graph.shape_dict[op1.outputs[0]] = (B, C, kh, H1, W0)
+
+        # ----
+        # - Reshape_1               --> rank 3 (B, C*kh*H1, W0)
+        op2_name = self.get_unique_edge_name(graph, op_name + '_op_reshape1')
+        op2_shape_name = op2_name + '_shape'
+        op2 = Node(op2_name, 'Reshape',
+                   {},
+                   [op1.outputs[0], op2_shape_name],
+                   [op2_name + '_out'])
+        op2.input_tensors[op2_shape_name] = np.asarray([B, C * kh * H1, W0])
+        # graph.shape_dict[op2_shape_name] = (3,)
+        graph.shape_dict[op2.outputs[0]] = (B, C * kh * H1, W0)
+
+        # ----
+        # - Gather_2(dim=2)         --> rank 4 (B, C*kh*H1, kw, W1)
+        op3_name = self.get_unique_edge_name(graph, op_name + '_op_gather2')
+        op3 = Node(op3_name, 'Gather',
+                   {'axis': 2},
+                   [op2.outputs[0], node_gather2.inputs[1]],
+                   [op3_name + '_out'])
+        graph.shape_dict[op3.outputs[0]] = (B, C * kh * H1, kw, W2)
+        op3.input_tensors = node_gather2.input_tensors
+        # ----
+        # - Transpose_1(0, 1, 3, 2) --> rank 4 (B, C*kh*H1, W2, kw)
+        op4_name = self.get_unique_edge_name(graph, op_name + '_op_transpose1')
+        op4 = Node(op4_name, 'Transpose',
+                   {'perm': np.asarray([0, 1, 3, 2])},
+                   [op3.outputs[0]],
+                   [op4_name + '_out'])
+        graph.shape_dict[op4.outputs[0]] = (B, C * kh * H1, W2, kw)
+
+        # ----
+        # - Reshape_2               --> rank 4 (B, C*kh, H1*W2, kw)
+        op5_name = self.get_unique_edge_name(graph, op_name + '_op_reshape2')
+        op5_shape_name = op5_name + '_shape'
+        op5 = Node(op5_name, 'Reshape',
+                   {},
+                   [op4.outputs[0], op5_shape_name],
+                   [op5_name + '_out'])
+        op5.input_tensors[op5_shape_name] = np.asarray([B, C * kh, H1 * W2, kw])
+        graph.shape_dict[op5.outputs[0]] = (B, C * kh, H1 * W2, kw)
+
+        # - Transpose_2(0, 1, 3, 2) --> rank 4 (B, C*kh, kw, H1*W2)
+        op6_name = self.get_unique_edge_name(graph, op_name + '_op_transpose2')
+        op6 = Node(op6_name, 'Transpose',
+                   {'perm': np.asarray([0, 1, 3, 2])},
+                   [op5.outputs[0]],
+                   [op6_name + '_out'])
+        graph.shape_dict[op6.outputs[0]] = (B, C * kh, kw, H1 * W2)
+
+        # - Reshape_3               --> rank 3 (B, C*kh*kw, H1*W2)
+        op7 = node_reshape
+        op7.inputs[0] = op6.outputs[0]
+
+        op1.add_child(op2)
+        op2.add_child(op3)
+        op3.add_child(op4)
+        op4.add_child(op5)
+        op5.add_child(op6)
+        op6.add_child(op7)
+
+        return [op1, op2, op3, op4, op5, op6, op7]
+
+
 class PixelShuffleFuser(NodesFuser):
     def __init__(self):  # type: () -> None
         super(PixelShuffleFuser, self).__init__(3)
@@ -443,7 +605,7 @@ class PixelShuffleFuser(NodesFuser):
         if not (nodes[0].op_type == 'Reshape' and nodes[1].op_type == 'Transpose' and nodes[2].op_type == 'Reshape'):
             return False
         if len(nodes[0].inputs) == 1 or len(nodes[2].inputs) == 1:
-            return False # it's an old version of onnx Reshape op that had shape as an attribute
+            return False  # it's an old version of onnx Reshape op that had shape as an attribute
         if nodes[0].inputs[1] not in nodes[0].input_tensors:
             return False
         if nodes[2].inputs[1] not in nodes[2].input_tensors:
@@ -538,10 +700,12 @@ class PixelShuffleFuser(NodesFuser):
 
         return [reshape_1, transpose_1, reshape_2, transpose_2, final_reshape]
 
+
 class AddModelInputsOutputs(object):
     '''
     Expose hidden states of recurrent layers as model inputs and outputs
     '''
+
     def __call__(self, graph):  # type: (Graph) -> Graph
         input_names = [str(input_[0]) for input_ in graph.inputs]
         output_names = [str(output_[0]) for output_ in graph.outputs]
@@ -554,19 +718,21 @@ class AddModelInputsOutputs(object):
                 h = node.attrs["hidden_size"]
                 for input_ in [str(input_h), str(input_c)]:
                     if input_ not in input_names:
-                        graph.inputs.append(tuple((input_, TensorProto.FLOAT, (h,))))  #type: ignore
+                        graph.inputs.append(tuple((input_, TensorProto.FLOAT, (h,))))  # type: ignore
                     if input_ not in graph.blob_to_op_type:
                         graph.blob_to_op_type[input_] = ['LSTM']
                 for output_ in [str(output_h), str(output_c)]:
                     if output_ not in output_names:
-                        graph.outputs.append(tuple((output_, TensorProto.FLOAT, (h,))))  #type: ignore
+                        graph.outputs.append(tuple((output_, TensorProto.FLOAT, (h,))))  # type: ignore
                     graph.blob_from_op_type[output_] = 'LSTM'
         return graph
+
 
 class ConstantsToInitializers(object):
     '''
     Takes onnx Constant nodes and puts the tensor into graph initializers instead.
     '''
+
     def __call__(self, graph):  # type: (Graph) -> Graph
         output_names = [str(output_[0]) for output_ in graph.outputs]
         nodes_to_be_removed = []
@@ -585,17 +751,19 @@ class ConstantsToInitializers(object):
                 transformed_nodes.append(node)
         return graph.create_graph(nodes=transformed_nodes)
 
+
 class ConstantFillToInitializers(object):
     '''
     Takes onnx ConstantFill nodes and puts the tensor into graph initializers instead, for simple cases only.
     '''
+
     def __call__(self, graph):  # type: (Graph) -> Graph
         output_names = [str(output_[0]) for output_ in graph.outputs]
         nodes_to_be_removed = []
         for node in graph.nodes:
             if node.op_type == 'ConstantFill' and (node.name not in output_names) and \
-               node.attrs.get('input_as_shape', 0) and node.inputs[0] in node.input_tensors \
-               and node.attrs.get('extra_shape', None) is None:
+                    node.attrs.get('input_as_shape', 0) and node.inputs[0] in node.input_tensors \
+                    and node.attrs.get('extra_shape', None) is None:
 
                 s = node.input_tensors[node.inputs[0]]
                 x = np.ones(tuple(s.astype(int))) * node.attrs.get('value', 0.0)
@@ -611,16 +779,18 @@ class ConstantFillToInitializers(object):
                 transformed_nodes.append(node)
         return graph.create_graph(nodes=transformed_nodes)
 
+
 class ShapeOpRemover(object):
     '''
     remove shape op, if the input shape is fully known
     '''
+
     def __call__(self, graph):  # type: (Graph) -> Graph
         nodes_to_be_removed = []
         output_names = [str(output_[0]) for output_ in graph.outputs]
         for node in graph.nodes:
             if node.op_type == 'Shape' and (node.name not in output_names) and node.inputs[0] in graph.shape_dict:
-                x_tuple = graph.shape_dict[node.inputs[0]] # type: Tuple[int, ...]
+                x_tuple = graph.shape_dict[node.inputs[0]]  # type: Tuple[int, ...]
                 is_well_defined = True
                 for i in x_tuple:
                     if not (isinstance(i, int) and i > 0):
@@ -642,10 +812,12 @@ class ShapeOpRemover(object):
                 transformed_nodes.append(node)
         return graph.create_graph(nodes=transformed_nodes)
 
+
 class CastOpRemover(object):
     '''
     Remove Cast Op: onnx-coreml treats all tensor as Float and hence, Cast operator should be removed
     '''
+
     def __call__(self, graph):  # type: (Graph) -> Graph
         global cast_i
         nodes_to_be_removed = []
@@ -661,17 +833,26 @@ class CastOpRemover(object):
                 transformed_nodes.append(node)
         return graph.create_graph(nodes=transformed_nodes)
 
+
 class PaddingOpRemover(object):
     '''
     Remove Pad Op if all the pad values are 0
     '''
+
     def __call__(self, graph):  # type: (Graph) -> Graph
         global cast_i
         nodes_to_be_removed = []
         output_names = [str(output_[0]) for output_ in graph.outputs]
         for node in graph.nodes:
             if node.op_type == 'Pad' and (node.name not in output_names) and node.inputs[0] in graph.shape_dict:
-                pads = node.attrs.get('pads', [])
+                pads = node.attrs.get('pads', None)
+                if pads is None and len(node.inputs) > 1:
+                    pads_node_id = node.inputs[1]
+                    if pads_node_id in node.input_tensors:
+                        pads = node.input_tensors[pads_node_id]
+                    else:
+                        continue
+
                 if len(pads) > 0 and sum(pads) == 0:
                     nodes_to_be_removed.append(node)
                     _remove_single_input_output_node(node)
@@ -681,6 +862,7 @@ class PaddingOpRemover(object):
             if node not in nodes_to_be_removed:
                 transformed_nodes.append(node)
         return graph.create_graph(nodes=transformed_nodes)
+
 
 class ImageScalerRemover(object):
     '''
@@ -707,11 +889,13 @@ class ImageScalerRemover(object):
                 transformed_nodes.append(node)
         return graph.create_graph(nodes=transformed_nodes)
 
+
 class ConstantRemover(object):
     '''
     Removes Op if its input is constant
     Currently, Supports: Gather, Floor, Div, Mul, Slice, Transpose, Concat, Unsqueeze, Squeeze
     '''
+
     def __call__(self, graph):  # type: (Graph) -> Graph
         nodes_to_be_removed = []
         graph_outputs = [o[0] for o in graph.outputs]
@@ -755,8 +939,15 @@ class ConstantRemover(object):
                 transformation_performed = True
             elif node.op_type == 'Slice':
                 x = node.input_tensors[node.inputs[0]]
-                ends = node.attrs['ends']
-                starts = node.attrs['starts']
+
+                starts = node.attrs.get('starts', None)
+                if starts is None and len(node.inputs) > 1:
+                    starts = node.input_tensors[node.inputs[1]].tolist()
+
+                ends = node.attrs.get('ends', None)
+                if ends is None and len(node.inputs) > 2:
+                    ends = node.input_tensors[node.inputs[2]].tolist()
+
                 axes = node.attrs.get('axes', range(len(starts)))
                 output = x
                 for i, a in enumerate(axes):
@@ -765,19 +956,19 @@ class ConstantRemover(object):
                     n = x.shape[a]
                     if s < 0: s += n
                     if e < 0: e += n
-                    output = np.take(x, range(s, e), axis=a) # type: ignore
+                    output = np.take(x, range(s, e), axis=a)  # type: ignore
                 transformation_performed = True
             elif node.op_type == 'Transpose':
                 x = node.input_tensors[node.inputs[0]]
                 perm = node.attrs.get('perm', None)
-                output = np.transpose(x, axes = perm)  # type: ignore
+                output = np.transpose(x, axes=perm)  # type: ignore
                 transformation_performed = True
             elif node.op_type == 'Concat':
                 x_arr = []
                 for input_ in node.inputs:
                     x_arr.append(node.input_tensors[input_])
                 axis = node.attrs.get('axis', 0)
-                output = np.concatenate(x_arr, axis=axis) # type: ignore
+                output = np.concatenate(x_arr, axis=axis)  # type: ignore
                 transformation_performed = True
             elif node.op_type == 'Unsqueeze' or node.op_type == 'Squeeze':
                 x = node.input_tensors[node.inputs[0]]
@@ -785,10 +976,10 @@ class ConstantRemover(object):
                     axes = node.attrs['axes']
                     axes.sort()
                     for axis in axes:
-                        output = np.expand_dims(x, axis=axis) # type: ignore
+                        output = np.expand_dims(x, axis=axis)  # type: ignore
                 else:
                     axes = node.attrs.get('axes', None)
-                    output = np.squeeze(x, axis = tuple(axes)) 
+                    output = np.squeeze(x, axis=tuple(axes))
                 transformation_performed = True
             elif node.op_type == 'Gemm':
                 alpha = node.attrs.get('alpha', 1.0)
@@ -818,24 +1009,26 @@ class ConstantRemover(object):
                 transformed_nodes.append(node)
         return graph.create_graph(nodes=transformed_nodes)
 
+
 class DeadCodeElimination(object):
     '''
     Removes nodes with unused outputs
     '''
+
     def __call__(self, graph):  # type: (Graph) -> Graph
         input_names = [str(input_[0]) for input_ in graph.inputs]
         output_names = set([str(output_[0]) for output_ in graph.outputs])
-        
+
         nodes_to_be_removed = []
         uses = {}
 
         for _output in output_names:
-            uses[_output] = uses.get(_output, 0) + 1    
+            uses[_output] = uses.get(_output, 0) + 1
 
         for node in graph.nodes:
             for _input in node.inputs:
                 uses[_input] = uses.get(_input, 0) + 1
-        
+
         for node in reversed(graph.nodes):
             output_used = False
             for _output in node.outputs:
@@ -857,12 +1050,12 @@ class DeadCodeElimination(object):
         for node in graph.nodes:
             if node.name not in nodes_to_be_removed:
                 transformed_nodes.append(node)
-        
+
         for _input in input_names:
             if _input not in uses:
                 for i in range(len(graph.inputs)):
                     if graph.inputs[i][0] is _input:
                         graph.inputs.remove(graph.inputs[i])
                         break
-        
+
         return graph.create_graph(nodes=transformed_nodes)

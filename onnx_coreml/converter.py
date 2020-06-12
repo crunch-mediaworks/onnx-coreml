@@ -29,13 +29,15 @@ from ._transformers import ConvAddFuser, DropoutRemover, \
     PixelShuffleFuser, OutputRenamer, AddModelInputsOutputs, \
     ConstantsToInitializers, ImageScalerRemover, ShapeOpRemover, ConstantRemover, \
     ConstantFillToInitializers, ReshapeTransposeReshape_pattern1, CastOpRemover, \
-    DeadCodeElimination, PaddingOpRemover
+    DeadCodeElimination, PaddingOpRemover, PytorchUnfoldFuser
 
 # ML model passes
 from coremltools.converters.nnssa.coreml.graph_pass.mlmodel_passes import remove_disconnected_layers, transform_conv_crop
 
 from ._error_utils import ErrorHandling
 from .graph_viz import plot_graph # type: ignore
+
+from onnxsim import simplify as simplify_onnx_graph
 
 USE_SHAPE_MAPPING = True
 
@@ -386,7 +388,8 @@ def convert(model,  # type: Union[onnx.ModelProto, Text]
             add_custom_layers = False,  # type: bool
             custom_conversion_functions = {}, #type: Dict[Text, Any]
             onnx_coreml_input_shape_map = {}, # type: Dict[Text, List[int,...]]
-            minimum_ios_deployment_target = '12'):
+            minimum_ios_deployment_target = '13',
+            preoptimize_graph = True):
     # type: (...) -> MLModel
     """
     Convert ONNX model to CoreML.
@@ -492,10 +495,29 @@ def convert(model,  # type: Union[onnx.ModelProto, Text]
         BNBroadcastedAddFuser(),
         ReshapeTransposeReshape_pattern1(),
         PixelShuffleFuser(),
+        PytorchUnfoldFuser(),
         AddModelInputsOutputs() if not disable_coreml_rank5_mapping else DummyTransformation(),
         ConstantFillToInitializers(),
     ]  # type: Iterable[Transformer]
 
+    if preoptimize_graph:
+        try:
+            # optimizers_list = ['eliminate_deadend', 'eliminate_identity', 'eliminate_nop_dropout',
+            #                    'eliminate_nop_monotone_argmax', 'eliminate_nop_pad',
+            #                    'extract_constant_to_initializer', 'eliminate_unused_initializer',
+            #                    'eliminate_nop_transpose', 'fuse_add_bias_into_conv',
+            #                    # https://github.com/daquexian/onnx-simplifier/issues/31
+            #                    # 'fuse_consecutive_concats',
+            #                    'fuse_consecutive_log_softmax',
+            #                    'fuse_consecutive_reduce_unsqueeze', 'fuse_consecutive_squeezes',
+            #                    'fuse_consecutive_transposes', 'fuse_matmul_add_bias_into_gemm',
+            #                    'fuse_pad_into_conv', 'fuse_transpose_into_gemm']
+            # onnx_model = onnx.optimizer.optimize(onnx_model, optimizers_list)
+            onnx_model,onnx_model_check = simplify_onnx_graph(onnx_model, perform_optimization=False)
+            if DEBUG:
+                onnx.save(onnx_model,'/tmp/simplified.onnx')
+        except BaseException as ex:
+            pass
 
     onnx_model = onnx.shape_inference.infer_shapes(onnx_model)
     graph = _prepare_onnx_graph(onnx_model.graph, transformers, onnx_model.ir_version)

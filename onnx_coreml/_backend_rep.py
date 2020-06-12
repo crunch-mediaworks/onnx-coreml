@@ -35,7 +35,7 @@ class CoreMLRep(BackendRep):
                  coreml_model,  # type: MLModel
                  onnx_outputs_info,  # type: Dict[Text, EdgeInfo]
                  useCPUOnly=False,  # type: bool
-                 minimum_ios_deployment_target='12' # type: str
+                 minimum_ios_deployment_target='13' # type: str
                  ):
         # type: (...) -> None
         super(CoreMLRep, self).__init__()

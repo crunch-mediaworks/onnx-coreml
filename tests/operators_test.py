@@ -198,7 +198,7 @@ class SingleOperatorTest(unittest.TestCase):
                 momentum=momentum
             )
 
-    def test_gemm(self, minimum_ios_deployment_target='12'):  # type: () -> None
+    def test_gemm(self, minimum_ios_deployment_target='13'):  # type: () -> None
         input_shape = (1, 2048)
         output_shape = (1, 5)
         W = from_array(
@@ -222,7 +222,7 @@ class SingleOperatorTest(unittest.TestCase):
     def test_gemm_ios13(self):
         self.test_gemm(minimum_ios_deployment_target='13')
 
-    def test_gemm_transB_off(self, minimum_ios_deployment_target='12'):  # type: () -> None
+    def test_gemm_transB_off(self, minimum_ios_deployment_target='13'):  # type: () -> None
         input_shape = (1, 2048)
         output_shape = (1, 5)
         W = from_array(
@@ -259,7 +259,7 @@ class SingleOperatorTest(unittest.TestCase):
 
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
-    def test_split_axis_0_rank_3(self, minimum_ios_deployment_target='12'):  # type: () -> None
+    def test_split_axis_0_rank_3(self, minimum_ios_deployment_target='13'):  # type: () -> None
         _test_single_node(
             "Split",
             [(2, 1, 200)],

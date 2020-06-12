@@ -26,7 +26,7 @@ if macos_version() < MIN_MACOS_VERSION_10_15:
 
 if not SupportedVersion.ios_support_check(MINIMUM_IOS_DEPLOYMENT_TARGET):
     raise ValueError(
-        "Invalid Target iOS version provided. Valid target iOS: {}".format(supported_ios_version)
+        "Invalid Target iOS version provided. Valid target iOS: {}".format(MINIMUM_IOS_DEPLOYMENT_TARGET)
     )
 
 class CoreMLTestingBackend(CoreMLBackendND if SupportedVersion.is_nd_array_supported(MINIMUM_IOS_DEPLOYMENT_TARGET) else CoreMLBackend):

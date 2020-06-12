@@ -7,22 +7,23 @@ import numpy as np
 import copy
 
 from typing import Sequence, Callable, List, Tuple, Optional, Text, Any
-from coremltools.models.neural_network import NeuralNetworkBuilder  #type: ignore
+from coremltools.models.neural_network import NeuralNetworkBuilder  # type: ignore
 from onnx import TensorProto
 from ._graph import Node, Graph
-from coremltools.proto import NeuralNetwork_pb2 #type: ignore
+from coremltools.proto import NeuralNetwork_pb2  # type: ignore
 from ._error_utils import ErrorHandling
 
 from ._operators import _convert_abs, _convert_relu, _convert_sqrt, _convert_exp, \
-                        _convert_elu, _convert_selu, _convert_sigmoid, _convert_sign, \
-                        _convert_prelu, _convert_upsample, _convert_softsign, _convert_softplus, \
-                        _convert_log, _convert_neg, _convert_reciprocal, _convert_hardsigmoid, \
-                        _convert_reorganize_data, _add_pool, _get_pool_params, _add_conv, _get_conv_params, \
-                        _convert_thresholdedrelu, _convert_leaky_relu, _convert_lrn
+    _convert_elu, _convert_selu, _convert_sigmoid, _convert_sign, \
+    _convert_prelu, _convert_upsample, _convert_softsign, _convert_softplus, \
+    _convert_log, _convert_neg, _convert_reciprocal, _convert_hardsigmoid, \
+    _convert_reorganize_data, _add_pool, _get_pool_params, _add_conv, _get_conv_params, \
+    _convert_thresholdedrelu, _convert_leaky_relu, _convert_lrn
 
 from ._operators import _convert_pad as _convert_pad_5d
 
-INT_MAX = 2**63 - 1
+INT_MAX = 2 ** 63 - 1
+
 
 ## Helper functions
 def load_input_constants(builder, node, graph, err):
@@ -37,10 +38,13 @@ def load_input_constants(builder, node, graph, err):
             )
             graph.constants_loaded.add(node.inputs[i])
 
+
 def _add_conv_like_op(add_func, get_params_func, params_dict,
                       builder, node, graph, err):
-
     rank = builder._get_rank(node.inputs[0])
+    if rank < 0 and node.op_type == "Conv" and "w_shape" in params_dict:
+        rank = len(params_dict["w_shape"])
+
     if rank == 4:
         get_params_func(builder, node, graph, err, params_dict)
         add_func(node.inputs, node.outputs, params_dict=params_dict, builder=builder, node=node, graph=graph, err=err)
@@ -49,7 +53,7 @@ def _add_conv_like_op(add_func, get_params_func, params_dict,
         # Make 5d tensor
         expanded_node_output = node.name + '_' + node.inputs[0] + '_expanded'
         builder.add_expand_dims(
-            name=node.name+'_ip_expand',
+            name=node.name + '_ip_expand',
             input_name=node.inputs[0],
             output_name=expanded_node_output,
             axes=axes
@@ -62,7 +66,7 @@ def _add_conv_like_op(add_func, get_params_func, params_dict,
         add_func(node.inputs, node.outputs, params_dict=params_dict, builder=builder, node=node, graph=graph, err=err)
         # Make 3d tensor back
         builder.add_squeeze(
-            name=node.name+'_ip_squeeze_out',
+            name=node.name + '_ip_squeeze_out',
             input_name=node.outputs[0],
             output_name=output_name,
             axes=axes
@@ -70,7 +74,7 @@ def _add_conv_like_op(add_func, get_params_func, params_dict,
     else:
         return err.unsupported_op_configuration(builder, node, graph, "provided number axes {} not supported".format(rank))
 
-    
+
 def add_broadcastable_op_chain(builder, node, err, add_op_function):
     '''
     Splits list of input into chain of operator with two inputs
@@ -80,12 +84,12 @@ def add_broadcastable_op_chain(builder, node, err, add_op_function):
          add_op_function: Conversion function to be used
     '''
     total_nodes = len(node.inputs)
-    
+
     if total_nodes < 2:
         # TODO: Skip or CopyProp + DeadCode elimination
         builder.add_activation(
             name=node.name,
-            non_linearity = 'LINEAR',
+            non_linearity='LINEAR',
             input_name=node.inputs[0],
             output_name=node.outputs[0],
             params=[1.0, 0.0]
@@ -103,22 +107,23 @@ def add_broadcastable_op_chain(builder, node, err, add_op_function):
         add_op_function(
             name=node.name,
             input_names=[node.inputs[0], node.inputs[1]],
-            output_name=out_name+'_'+str(decorator)
+            output_name=out_name + '_' + str(decorator)
         )
         # Continue chain of broadcastable layers
-        for i in range(2, total_nodes-1):
+        for i in range(2, total_nodes - 1):
             add_op_function(
                 name=node.name,
-                input_names=[out_name+'_'+str(decorator), node.inputs[i]],
-                output_name=out_name+'_'+str(decorator+1)
+                input_names=[out_name + '_' + str(decorator), node.inputs[i]],
+                output_name=out_name + '_' + str(decorator + 1)
             )
             decorator += 1
         # End chain of broadcastable layers with final output
         add_op_function(
-            name=node.name+'_'+str(decorator),
-            input_names=[out_name+'_'+str(decorator), node.inputs[total_nodes-1]],
+            name=node.name + '_' + str(decorator),
+            input_names=[out_name + '_' + str(decorator), node.inputs[total_nodes - 1]],
             output_name=out_name
         )
+
 
 def add_bn_with_expansion(builder, node, err, node_name, input_name, output_name, channels, scale, bias, mean=None, var=None,
                           epsilon=None, compute_mean_var=False, instance_normalization=False, axes_for_expansion=[]):
@@ -127,8 +132,8 @@ def add_bn_with_expansion(builder, node, err, node_name, input_name, output_name
 
     # Expand input if needed
     if len(axes_for_expansion) != 0:
-        input_name=node_name + '_' + input_name + '_expanded'
-        output_name=output_name+'_expanded'
+        input_name = node_name + '_' + input_name + '_expanded'
+        output_name = output_name + '_expanded'
         builder.add_expand_dims(
             name=node_name + '_expand',
             input_name=real_input_name,
@@ -153,17 +158,19 @@ def add_bn_with_expansion(builder, node, err, node_name, input_name, output_name
     # Squeeze output if needed
     if len(axes_for_expansion) != 0:
         builder.add_squeeze(
-            name=node_name+'_squeeze',
+            name=node_name + '_squeeze',
             input_name=output_name,
             output_name=real_output_name,
             axes=axes_for_expansion
         )
+
+
 # Helper function to convert RandomNormal, RandomUniform and it's variants
 def add_random(builder, node, graph, err, add_op_function):
     # Ignoring attribute `dtype` as CoreML internally represents tensors into 'Float'
-    mean  = node.attrs.get('mean', 0.0)
+    mean = node.attrs.get('mean', 0.0)
     scale = node.attrs.get('scale', 1.0)
-    seed  = node.attrs.get('seed', -1)
+    seed = node.attrs.get('seed', -1)
     shape = node.attrs.get('shape', None)
     if shape is None:
         return err.unsupported_op_configuration(builder, node, graph, "Shape not provided")
@@ -175,6 +182,7 @@ def add_random(builder, node, graph, err, add_op_function):
         stddev=scale,
         seed=seed
     )
+
 
 ## Converter functions
 
@@ -190,6 +198,7 @@ def _convert_acos(builder, node, graph, err):
         output_name=node.outputs[0]
     )
 
+
 def _convert_acosh(builder, node, graph, err):
     '''
     convert to CoreML Acosh Layer:
@@ -202,6 +211,7 @@ def _convert_acosh(builder, node, graph, err):
         output_name=node.outputs[0]
     )
 
+
 def _convert_add(builder, node, graph, err):
     '''
     convert to CoreML Add Broadcastable Layer:
@@ -209,6 +219,7 @@ def _convert_add(builder, node, graph, err):
     '''
     load_input_constants(builder, node, graph, err)
     add_broadcastable_op_chain(builder, node, err, builder.add_add_broadcastable)
+
 
 def _convert_argmax(builder, node, graph, err):
     '''
@@ -225,6 +236,7 @@ def _convert_argmax(builder, node, graph, err):
         keepdims=keepdims
     )
 
+
 def _convert_argmin(builder, node, graph, err):
     '''
     convert to CoreML ArgMin Layer:
@@ -240,6 +252,7 @@ def _convert_argmin(builder, node, graph, err):
         keepdims=keepdims
     )
 
+
 def _convert_asin(builder, node, graph, err):
     '''
     convert to CoreML Asin Layer:
@@ -251,6 +264,7 @@ def _convert_asin(builder, node, graph, err):
         input_name=node.inputs[0],
         output_name=node.outputs[0]
     )
+
 
 def _convert_asinh(builder, node, graph, err):
     '''
@@ -264,6 +278,7 @@ def _convert_asinh(builder, node, graph, err):
         output_name=node.outputs[0]
     )
 
+
 def _convert_atan(builder, node, graph, err):
     '''
     convert to CoreML Atan Layer:
@@ -276,6 +291,7 @@ def _convert_atan(builder, node, graph, err):
         output_name=node.outputs[0]
     )
 
+
 def _convert_atanh(builder, node, graph, err):
     '''
     convert to CoreML Atanh Layer:
@@ -287,6 +303,7 @@ def _convert_atanh(builder, node, graph, err):
         input_name=node.inputs[0],
         output_name=node.outputs[0]
     )
+
 
 def _convert_bn(builder, node, graph, err):
     '''
@@ -319,13 +336,13 @@ def _convert_bn(builder, node, graph, err):
             err.unsupported_op_configuration(builder, node, graph, "Shape mismatch between Scale, Bias, Mean and Variance")
 
     scale = node.input_tensors[node.inputs[1]] if node.inputs[1] in node.input_tensors else \
-            np.ones(shape=channels, dtype=np.float32)
+        np.ones(shape=channels, dtype=np.float32)
     bias = node.input_tensors[node.inputs[2]] if node.inputs[2] in node.input_tensors else \
-            np.zeros(shape=channels, dtype=np.float32)
+        np.zeros(shape=channels, dtype=np.float32)
     mean = node.input_tensors[node.inputs[3]] if node.inputs[3] in node.input_tensors else \
-            np.zeros(shape=channels, dtype=np.float32)
+        np.zeros(shape=channels, dtype=np.float32)
     var = node.input_tensors[node.inputs[4]] if node.inputs[4] in node.input_tensors else \
-            np.ones(shape=channels, dtype=np.float32)
+        np.ones(shape=channels, dtype=np.float32)
 
     rank = builder._get_rank(node.inputs[0])
     # ONNX converts B x C tensor into B x C x 1 hence
@@ -341,7 +358,8 @@ def _convert_bn(builder, node, graph, err):
     else:
         # Unsupported 1D, 3D and above
         err.unsupported_op_configuration(builder, node, graph, "provided number axes {} not supported".format(rank))
-    
+
+
 def _convert_cast(builder, node, graph, err):
     '''
     Perform cast operation in CoreML
@@ -364,11 +382,12 @@ def _convert_cast(builder, node, graph, err):
         load_input_constants(builder, node, graph, err)
         builder.add_activation(
             name=node.name,
-            non_linearity = 'LINEAR',
+            non_linearity='LINEAR',
             input_name=node.inputs[0],
             output_name=node.outputs[0],
             params=[1.0, 0.0]
         )
+
 
 def _convert_ceil(builder, node, graph, err):
     '''
@@ -380,6 +399,7 @@ def _convert_ceil(builder, node, graph, err):
         input_name=node.inputs[0],
         output_name=node.outputs[0],
     )
+
 
 def _convert_clip(builder, node, graph, err):
     '''
@@ -396,6 +416,7 @@ def _convert_clip(builder, node, graph, err):
         max_value=max_value
     )
 
+
 def _convert_concat(builder, node, graph, err):
     '''
     convert to CoreML ConcatND Layer:
@@ -410,7 +431,7 @@ def _convert_concat(builder, node, graph, err):
     if len(node.inputs) == 1:
         builder.add_activation(
             name=node.name,
-            non_linearity = 'LINEAR',
+            non_linearity='LINEAR',
             input_name=node.inputs[0],
             output_name=node.outputs[0],
             params=[1.0, 0.0]
@@ -422,6 +443,7 @@ def _convert_concat(builder, node, graph, err):
             output_name=node.outputs[0],
             axis=axis
         )
+
 
 def _convert_constant(builder, node, graph, err):
     '''
@@ -437,6 +459,7 @@ def _convert_constant(builder, node, graph, err):
         shape=[1] if value.shape == () else value.shape
     )
     graph.constants_loaded(node.outputs[0])
+
 
 def _convert_constant_of_shape(builder, node, graph, err):
     '''
@@ -465,6 +488,7 @@ def _convert_constant_of_shape(builder, node, graph, err):
             value=value[0]
         )
 
+
 def _convert_conv(builder, node, graph, err):
     '''
     convert to CoreML Convolution Layer:
@@ -474,7 +498,7 @@ def _convert_conv(builder, node, graph, err):
     params_dict['is_deconv'] = False
     if node.op_type.endswith("Transpose"):
         params_dict['is_deconv'] = True
-    #get weights for convolution
+    # get weights for convolution
     weight_name = node.inputs[1]
     W = None
     if weight_name in node.input_tensors:
@@ -487,13 +511,13 @@ def _convert_conv(builder, node, graph, err):
         # Expected CoreML Format: H x W x KC x OC
         W_name = node.inputs[1]
         W_shape = graph.shape_dict[W_name]
-        W_rank  = len(W_shape)
+        W_rank = len(W_shape)
 
         params_dict['w_shape'] = W_shape
         if W_rank == 3:
             expanded_node_name = node.name + '_' + W_name + '_expanded'
             builder.add_expand_dims(
-                name=node.name+'_w_expand',
+                name=node.name + '_w_expand',
                 input_name=W_name,
                 output_name=expanded_node_name,
                 axes=[-2]
@@ -501,18 +525,18 @@ def _convert_conv(builder, node, graph, err):
             W_name = expanded_node_name
 
         # Now Permute the W tensor
-        W_transpose_axes=[2, 3, 1, 0]
+        W_transpose_axes = [2, 3, 1, 0]
         # If ConvTranpose then, Kernel and Output channels are shuffled
         if params_dict['is_deconv']:
-            W_transpose_axes=[2, 3, 0, 1]
-    
+            W_transpose_axes = [2, 3, 0, 1]
+
         builder.add_transpose(
-            name=node.name+'_w_transpose',
+            name=node.name + '_w_transpose',
             axes=W_transpose_axes,
             input_name=W_name,
-            output_name=W_name+'_transposed',
+            output_name=W_name + '_transposed',
         )
-        W_name = W_name+'_transposed'
+        W_name = W_name + '_transposed'
         node.inputs[1] = W_name
 
     params_dict['W'] = W
@@ -524,6 +548,7 @@ def _convert_conv(builder, node, graph, err):
 
     _add_conv_like_op(_add_conv, _get_conv_params, params_dict,
                       builder, node, graph, err)
+
 
 def _convert_cos(builder, node, graph, err):
     '''
@@ -537,6 +562,7 @@ def _convert_cos(builder, node, graph, err):
         output_name=node.outputs[0]
     )
 
+
 def _convert_cosh(builder, node, graph, err):
     '''
     convert to CoreML Cosh Layer:
@@ -549,6 +575,7 @@ def _convert_cosh(builder, node, graph, err):
         output_name=node.outputs[0]
     )
 
+
 def _convert_div(builder, node, graph, err):
     '''
     convert to CoreML Divide Broadcastable Layer:
@@ -556,6 +583,7 @@ def _convert_div(builder, node, graph, err):
     '''
     load_input_constants(builder, node, graph, err)
     add_broadcastable_op_chain(builder, node, err, builder.add_divide_broadcastable)
+
 
 def _convert_equal(builder, node, graph, err):
     '''
@@ -569,6 +597,7 @@ def _convert_equal(builder, node, graph, err):
         output_name=node.outputs[0]
     )
 
+
 def _convert_erf(builder, node, graph, err):
     '''
     convert to CoreML Erf Layer:
@@ -580,6 +609,7 @@ def _convert_erf(builder, node, graph, err):
         input_name=node.inputs[0],
         output_name=node.outputs[0]
     )
+
 
 def _convert_expand(builder, node, graph, err):
     '''
@@ -603,6 +633,7 @@ def _convert_expand(builder, node, graph, err):
             output_name=node.outputs[0],
         )
 
+
 def _convert_flatten(builder, node, graph, err):
     '''
     convert to CoreML Flatten Layer:
@@ -616,6 +647,7 @@ def _convert_flatten(builder, node, graph, err):
         axis=axis
     )
 
+
 def _convert_floor(builder, node, graph, err):
     '''
     convert to CoreML Floor Layer:
@@ -627,6 +659,7 @@ def _convert_floor(builder, node, graph, err):
         output_name=node.outputs[0]
     )
 
+
 def _convert_gather(builder, node, graph, err):
     '''
     convert to CoreML Gather Along Axis Layer:
@@ -636,7 +669,7 @@ def _convert_gather(builder, node, graph, err):
 
     if len(node.inputs) != 2:
         err.unsupported_op_configuration(builder, node, graph, "Error in ONNX model: Gather expects two inputs")
-    
+
     if node.inputs[0] in node.input_tensors and node.inputs[0] not in graph.constants_loaded:
         value = node.input_tensors[node.inputs[0]]
         builder.add_load_constant_nd(
@@ -646,23 +679,24 @@ def _convert_gather(builder, node, graph, err):
             shape=[1] if value.shape == () else value.shape
         )
         graph.constants_loaded.add(node.inputs[0])
-    
+
     if node.inputs[1] in node.input_tensors and node.inputs[1] not in graph.constants_loaded:
         value = node.input_tensors[node.inputs[1]]
         builder.add_load_constant_nd(
-            name=node.name+ '_load_indices',
+            name=node.name + '_load_indices',
             output_name=node.inputs[1],
             constant_value=value,
             shape=[1] if value.shape == () else value.shape
         )
         graph.constants_loaded.add(node.inputs[1])
-    
+
     builder.add_gather(
         name=node.name,
         input_names=[node.inputs[0], node.inputs[1]],
         output_name=node.outputs[0],
         axis=axis
     )
+
 
 def _convert_gemm(builder, node, graph, err):
     '''
@@ -684,19 +718,19 @@ def _convert_gemm(builder, node, graph, err):
             constant_value=A_tensor,
             shape=A_tensor.shape
         )
-        A = 'const_'+A
+        A = 'const_' + A
 
     if alpha != 1.0:
         builder.add_load_constant_nd(
             name=node.name + '_load_alpha',
-            output_name='alpha_for_'+A,
+            output_name='alpha_for_' + A,
             constant_value=np.array([alpha]),
             shape=[1]
         )
         builder.add_multiply_broadcastable(
             name=node.name + '_alphaA',
-            input_names=[A, 'alpha_for_'+A],
-            output_name=A+'_alphaA'
+            input_names=[A, 'alpha_for_' + A],
+            output_name=A + '_alphaA'
         )
         A = A + '_alphaA'
 
@@ -708,7 +742,7 @@ def _convert_gemm(builder, node, graph, err):
 
         if transB:
             B = B.transpose()
-        
+
         C = C.flatten()
         builder.add_batched_mat_mul(
             name=node.name,
@@ -726,14 +760,14 @@ def _convert_gemm(builder, node, graph, err):
         if beta != 1.0:
             builder.add_load_constant_nd(
                 name=node.name + '_load_beta',
-                output_name='beta_for_'+B,
+                output_name='beta_for_' + B,
                 constant_value=np.array([beta]),
                 shape=[1]
             )
             builder.add_multiply_broadcastable(
                 name=node.name + '_betaC',
-                input_names=[C, 'beta_for_'+B],
-                output_name=C+'_betaC'
+                input_names=[C, 'beta_for_' + B],
+                output_name=C + '_betaC'
             )
             C = C + '_betaC'
 
@@ -746,10 +780,11 @@ def _convert_gemm(builder, node, graph, err):
         )
 
         builder.add_add_broadcastable(
-            name=node.name+'_add_bias',
-            input_names=[node.outputs[0]+'_b_mat_mul', C],
+            name=node.name + '_add_bias',
+            input_names=[node.outputs[0] + '_b_mat_mul', C],
             output_name=node.outputs[0]
         )
+
 
 def _convert_greater(builder, node, graph, err):
     '''
@@ -763,6 +798,7 @@ def _convert_greater(builder, node, graph, err):
         output_name=node.outputs[0],
     )
 
+
 def _convert_gru(builder, node, graph, err):  # type: (NeuralNetworkBuilder, Node, Graph, ErrorHandling) -> None
     '''
     convert to CoreML GRU Layer:
@@ -775,7 +811,7 @@ def _convert_gru(builder, node, graph, err):  # type: (NeuralNetworkBuilder, Nod
         '''
         W = np.expand_dims(np.expand_dims(W, 3), 3)
         R = np.expand_dims(np.expand_dims(R, 3), 3)
-    
+
         if W is None:
             err.missing_initializer(node,
                                     "Weight tensor: {} not found in the graph initializer".format(W_name))
@@ -783,14 +819,14 @@ def _convert_gru(builder, node, graph, err):  # type: (NeuralNetworkBuilder, Nod
             err.missing_initializer(node,
                                     "Weight tensor: {} not found in the graph initializer".format(R_name))
 
-        W_z, W_r, W_h = np.split(np.squeeze(W), 3)  #type: ignore
-        R_z, R_r, R_h = np.split(np.squeeze(R), 3)  #type: ignore
+        W_z, W_r, W_h = np.split(np.squeeze(W), 3)  # type: ignore
+        R_z, R_r, R_h = np.split(np.squeeze(R), 3)  # type: ignore
 
         W_x = [W_z, W_r, W_h]
         W_h = [R_z, R_r, R_h]
         b = None
         if B is not None:
-            b_Wz, b_Wr, b_Wh, b_Rz, b_Rr, b_Rh = np.split(np.squeeze(B), 6)  #type: ignore
+            b_Wz, b_Wr, b_Wh, b_Rz, b_Rr, b_Rh = np.split(np.squeeze(B), 6)  # type: ignore
             b = [b_Wz + b_Rz, b_Wr + b_Rr, b_Wh + b_Rh]
 
         return W_x, W_h, b
@@ -807,23 +843,24 @@ def _convert_gru(builder, node, graph, err):  # type: (NeuralNetworkBuilder, Nod
     # activation alpha and beta
     if 'activation_alpha' in node.attrs or 'activation_beta' in node.attrs:
         err.unsupported_feature_warning(node, "Activation parameter alpha and beta are currently not used")
-    
+
     inner_activation = 'SIGMOID'
     output_activation = 'TANH'
 
     if 'activations' in node.attrs:
         activations_list = node.attrs['activations']
-    
+
         if len(activations_list) < 2:
             err.unsupported_op_configuration(builder, node, graph, "Error in ONNX model: Less number of activations provided")
-    
+
         inner_activation = activations_list[0].upper()
         output_activation = activations_list[1].upper()
-    
+
     # Extract direction from ONNX attribute
     direction = node.attrs.get('direction', 'forward')
     if direction == 'bidirectional':
-        return err.unsupported_op_configuration(builder, node, graph, "Bidirectional GRU not supported!! Please consider adding custom conversion function/layer")
+        return err.unsupported_op_configuration(builder, node, graph,
+                                                "Bidirectional GRU not supported!! Please consider adding custom conversion function/layer")
 
     hidden_size = node.attrs.get('hidden_size')
 
@@ -834,9 +871,10 @@ def _convert_gru(builder, node, graph, err):  # type: (NeuralNetworkBuilder, Nod
     if len(node.inputs) > 3:
         B_name = node.inputs[3]
         B = node.input_tensors.get(B_name, None)
- 
+
     if W_name not in node.input_tensors or R_name not in node.input_tensors:
-        return err.unsupported_op_configuration(builder, node, graph, "Input and Recursion weights must be known!! Please consider adding custom conversion function/layer")
+        return err.unsupported_op_configuration(builder, node, graph,
+                                                "Input and Recursion weights must be known!! Please consider adding custom conversion function/layer")
 
     W = node.input_tensors.get(W_name, None)
     R = node.input_tensors.get(R_name, None)
@@ -871,19 +909,21 @@ def _convert_gru(builder, node, graph, err):  # type: (NeuralNetworkBuilder, Nod
     input_rank = builder._get_rank(node.inputs[0])
     if input_rank == -1:
         return err.unsupported_op_configuration(builder, node, graph, "Rank unknown for input")
-    
+
     if input_rank < 5:
         add_nodes = 5 - input_rank
 
         # TODO: Add one expand instead of adding one after another for input, h
-        expand_dim(node.name+'_expand_in_0', node.inputs[0], node.inputs[0]+'_expand_out_0', [input_rank])
-        expand_dim(node.name+'_expand_in_h_0', input_h, input_h+'_expand_out_h_0', [input_rank])
+        expand_dim(node.name + '_expand_in_0', node.inputs[0], node.inputs[0] + '_expand_out_0', [input_rank])
+        expand_dim(node.name + '_expand_in_h_0', input_h, input_h + '_expand_out_h_0', [input_rank])
 
         for i in range(1, add_nodes):
             i_str = str(i)
-            i_p_str = str(i-1)
-            expand_dim(node.name+'_expand_in_'+i_str, node.inputs[0]+'_expand_out_'+i_p_str, node.inputs[0]+'_expand_out_'+i_str, [input_rank+i])
-            expand_dim(node.name+'_expand_in_h_'+i_str, input_h+'_expand_out_h_'+i_p_str, input_h+'_expand_out_h_'+i_str, [input_rank+i])
+            i_p_str = str(i - 1)
+            expand_dim(node.name + '_expand_in_' + i_str, node.inputs[0] + '_expand_out_' + i_p_str,
+                       node.inputs[0] + '_expand_out_' + i_str, [input_rank + i])
+            expand_dim(node.name + '_expand_in_h_' + i_str, input_h + '_expand_out_h_' + i_p_str, input_h + '_expand_out_h_' + i_str,
+                       [input_rank + i])
 
     builder.add_gru(
         name=node.name,
@@ -892,8 +932,8 @@ def _convert_gru(builder, node, graph, err):  # type: (NeuralNetworkBuilder, Nod
         b=b,
         hidden_size=hidden_size,
         input_size=input_size,
-        input_names=[node.inputs[0] + '_expand_out_' + str(add_nodes-1), input_h + '_expand_out_h_' + str(add_nodes-1)],
-        output_names=[node.outputs[0]+'_5d_out', output_h_5d],
+        input_names=[node.inputs[0] + '_expand_out_' + str(add_nodes - 1), input_h + '_expand_out_h_' + str(add_nodes - 1)],
+        output_names=[node.outputs[0] + '_5d_out', output_h_5d],
         inner_activation=inner_activation,
         activation=output_activation,
         output_all=True,
@@ -908,15 +948,15 @@ def _convert_gru(builder, node, graph, err):  # type: (NeuralNetworkBuilder, Nod
     #       c. Permute to fix the order [Seq Len, Num Dir, Batch Size, Hidden Size, 1]
     builder.add_rank_preserving_reshape(
         name=node.name + '_reshape_',
-        input_name=node.outputs[0]+'_5d_out',
-        output_name=node.outputs[0]+'_5d_reshaped',
+        input_name=node.outputs[0] + '_5d_out',
+        output_name=node.outputs[0] + '_5d_reshaped',
         output_shape=[0, 0, 1, -1, 0]
     )
 
     builder.add_squeeze(
-        name=node.name+'_squeeze_out',
-        input_name=node.outputs[0]+'_5d_reshaped',
-        output_name=node.outputs[0]+'_4d',
+        name=node.name + '_squeeze_out',
+        input_name=node.outputs[0] + '_5d_reshaped',
+        output_name=node.outputs[0] + '_4d',
         axes=[-1]
     )
 
@@ -929,11 +969,12 @@ def _convert_gru(builder, node, graph, err):  # type: (NeuralNetworkBuilder, Nod
 
     # Squeeze dimensions of output_h
     builder.add_squeeze(
-        name=node.name+'_squeeze_out_h',
+        name=node.name + '_squeeze_out_h',
         input_name=output_h_5d,
         output_name=output_h,
         axes=[-1, -2]
     )
+
 
 def _convert_identity(builder, node, graph, err):
     '''
@@ -943,11 +984,12 @@ def _convert_identity(builder, node, graph, err):
     # TODO: Skip or CopyProp + DeadCode elimination
     builder.add_activation(
         name=node.name,
-        non_linearity = 'LINEAR',
+        non_linearity='LINEAR',
         input_name=node.inputs[0],
         output_name=node.outputs[0],
         params=[1.0, 0.0]
     )
+
 
 def _convert_instancenorm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, Node, Graph, ErrorHandling) -> None
     '''
@@ -957,7 +999,7 @@ def _convert_instancenorm(builder, node, graph, err):  # type: (NeuralNetworkBui
     epsilon = node.attrs.get("epsilon", 1e-5)
     if node.inputs[1] not in node.input_tensors or node.inputs[2] not in node.input_tensors:
         return err.unsupported_op_configuration(builder, node, graph, "CoreML InstanceNorm requires Scale and Bias to be known")
-    
+
     scale = node.input_tensors[node.inputs[1]]
     bias = node.input_tensors[node.inputs[2]]
 
@@ -978,6 +1020,7 @@ def _convert_instancenorm(builder, node, graph, err):  # type: (NeuralNetworkBui
         # Unsupported 1D, 3D and above
         err.unsupported_op_configuration(builder, node, graph, "provided number axes {} not supported".format(rank))
 
+
 def _convert_less(builder, node, graph, err):
     '''
     convert to CoreML Less Than Layer:
@@ -989,6 +1032,7 @@ def _convert_less(builder, node, graph, err):
         input_names=node.inputs,
         output_name=node.outputs[0],
     )
+
 
 def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, Node, Graph, ErrorHandling) -> None
     '''
@@ -1003,7 +1047,7 @@ def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, No
         '''
         W = np.expand_dims(np.expand_dims(W, 3), 3)
         R = np.expand_dims(np.expand_dims(R, 3), 3)
-    
+
         if W is None:
             err.missing_initializer(node,
                                     "Weight tensor: {} not found in the graph initializer".format(W_name))
@@ -1011,14 +1055,14 @@ def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, No
             err.missing_initializer(node,
                                     "Weight tensor: {} not found in the graph initializer".format(R_name))
 
-        W_i, W_o, W_f, W_c = np.split(np.squeeze(W), 4)  #type: ignore
-        R_i, R_o, R_f, R_c = np.split(np.squeeze(R), 4)  #type: ignore
+        W_i, W_o, W_f, W_c = np.split(np.squeeze(W), 4)  # type: ignore
+        R_i, R_o, R_f, R_c = np.split(np.squeeze(R), 4)  # type: ignore
 
         W_x = [W_i, W_f, W_o, W_c]
         W_h = [R_i, R_f, R_o, R_c]
         b = None
         if B is not None:
-            b_Wi, b_Wo, b_Wf, b_Wc, b_Ri, b_Ro, b_Rf, b_Rc = np.split(np.squeeze(B), 8)  #type: ignore
+            b_Wi, b_Wo, b_Wf, b_Wc, b_Ri, b_Ro, b_Rf, b_Rc = np.split(np.squeeze(B), 8)  # type: ignore
             b = [b_Wi + b_Ri, b_Wf + b_Rf, b_Wo + b_Ro, b_Wc + b_Rc]
 
         return W_x, W_h, b
@@ -1035,24 +1079,24 @@ def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, No
     # activation alpha and beta
     if 'activation_alpha' in node.attrs or 'activation_beta' in node.attrs:
         err.unsupported_feature_warning(node, "Activation parameter alpha and beta are currently not used")
-    
+
     inner_activation = 'SIGMOID'
     cell_state_update_activation = 'TANH'
     output_activation = 'TANH'
 
     if 'activations' in node.attrs:
         activations_list = node.attrs['activations']
-    
+
         if len(activations_list) < 3:
             err.unsupported_op_configuration(builder, node, graph, "Error in ONNX model: Less number of activations provided")
-    
+
         if len(activations_list) == 6:
             err.unsupported_feature_warning(node, "Forward and backward pass will use same activations.")
 
         inner_activation = activations_list[0].upper()
         cell_state_update_activation = activations_list[1].upper()
         output_activation = activations_list[2].upper()
-    
+
     # Provide max Clip Value if not provided
     clip_threshold = node.attrs.get('clip', 500000.0)
 
@@ -1072,7 +1116,7 @@ def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, No
     if len(node.inputs) > 3:
         B_name = node.inputs[3]
         B = node.input_tensors.get(B_name, None)
- 
+
     W = node.input_tensors.get(W_name, None)
     R = node.input_tensors.get(R_name, None)
 
@@ -1099,7 +1143,7 @@ def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, No
 
     # if input is not present in the network, load they as constant
     load_input_constants(builder, node, graph, err)
-    
+
     # Input is represented as [Seq Len, Batch Size, Input Size]
     if len(node.inputs) < 6:
         batch_size = graph.shape_dict[node.inputs[0]][1]
@@ -1123,16 +1167,19 @@ def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, No
     if rank < 5:
         add_nodes = 5 - rank
         # TODO: Add one expand instead of adding one after another for input, h and c
-        expand_dim(node.name+'_expand_in_0', node.inputs[0], node.inputs[0]+'_expand_out_0', [rank])
-        expand_dim(node.name+'_expand_in_h_0', input_h, input_h+'_expand_out_h_0', [rank])
-        expand_dim(node.name+'_expand_in_c_0', input_c, input_c+'_expand_out_c_0', [rank])
+        expand_dim(node.name + '_expand_in_0', node.inputs[0], node.inputs[0] + '_expand_out_0', [rank])
+        expand_dim(node.name + '_expand_in_h_0', input_h, input_h + '_expand_out_h_0', [rank])
+        expand_dim(node.name + '_expand_in_c_0', input_c, input_c + '_expand_out_c_0', [rank])
 
         for i in range(1, add_nodes):
             i_str = str(i)
-            i_p_str = str(i-1)
-            expand_dim(node.name+'_expand_in_'+i_str, node.inputs[0]+'_expand_out_'+i_p_str, node.inputs[0]+'_expand_out_'+i_str, [rank+i])
-            expand_dim(node.name+'_expand_in_h_'+i_str, input_h+'_expand_out_h_'+i_p_str, input_h+'_expand_out_h_'+i_str, [rank+i])
-            expand_dim(node.name+'_expand_in_c_'+i_str, input_c+'_expand_out_c_'+i_p_str, input_c+'_expand_out_c_'+i_str, [rank+i])
+            i_p_str = str(i - 1)
+            expand_dim(node.name + '_expand_in_' + i_str, node.inputs[0] + '_expand_out_' + i_p_str,
+                       node.inputs[0] + '_expand_out_' + i_str, [rank + i])
+            expand_dim(node.name + '_expand_in_h_' + i_str, input_h + '_expand_out_h_' + i_p_str, input_h + '_expand_out_h_' + i_str,
+                       [rank + i])
+            expand_dim(node.name + '_expand_in_c_' + i_str, input_c + '_expand_out_c_' + i_p_str, input_c + '_expand_out_c_' + i_str,
+                       [rank + i])
 
     if direction == 1:
         # Peephole from ONNX are of shape [Num Dir, 3 * hidden_size]
@@ -1141,7 +1188,7 @@ def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, No
             builder.add_reshape_static(
                 name=node.name + '_peephole_reshape',
                 input_name=peepholes,
-                output_name=peepholes+'_reshaped',
+                output_name=peepholes + '_reshaped',
                 output_shape=[hidden_size, hidden_size, hidden_size]
             )
             peepholes = peepholes + '_reshaped'
@@ -1153,8 +1200,9 @@ def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, No
             b=b,
             hidden_size=hidden_size,
             input_size=input_size,
-            input_names=[node.inputs[0] + '_expand_out_' + str(add_nodes-1), input_h + '_expand_out_h_' + str(add_nodes-1), input_c + '_expand_out_c_' + str(add_nodes-1)],
-            output_names=[node.outputs[0]+'_5d_out', output_h_5d, output_c_5d],
+            input_names=[node.inputs[0] + '_expand_out_' + str(add_nodes - 1), input_h + '_expand_out_h_' + str(add_nodes - 1),
+                         input_c + '_expand_out_c_' + str(add_nodes - 1)],
+            output_names=[node.outputs[0] + '_5d_out', output_h_5d, output_c_5d],
             inner_activation=inner_activation,
             cell_state_update_activation=cell_state_update_activation,
             output_activation=output_activation,
@@ -1177,7 +1225,7 @@ def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, No
             builder.add_reshape_static(
                 name=node.name + '_peephole_reshape',
                 input_name=peepholes,
-                output_name=peepholes+'_reshaped',
+                output_name=peepholes + '_reshaped',
                 output_shape=[direction, hidden_size, hidden_size, hidden_size]
             )
 
@@ -1185,17 +1233,17 @@ def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, No
             peepholes_b = peepholes + '_b'
 
             builder.add_split_nd(
-                name=node.name+'_peephole_split',
-                input_name=peepholes+'_reshaped',
+                name=node.name + '_peephole_split',
+                input_name=peepholes + '_reshaped',
                 output_names=[peepholes_f, peepholes_b],
                 axis=0
             )
 
         # split input_h and input_c into two parts
         builder.add_split_nd(
-            name=node.name+'_split_h',
-            input_name=input_h+'_expand_out_h_' + str(add_nodes-1),
-            output_names=[input_h+'_f', input_h+'_b'],
+            name=node.name + '_split_h',
+            input_name=input_h + '_expand_out_h_' + str(add_nodes - 1),
+            output_names=[input_h + '_f', input_h + '_b'],
             axis=0
         )
 
@@ -1203,9 +1251,9 @@ def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, No
         # Avoid creating new split and instead reuse
         if input_h != input_c:
             builder.add_split_nd(
-                name=node.name+'_split_c',
-                input_name=input_c+'_expand_out_c_' + str(add_nodes-1),
-                output_names=[input_c+'_f', input_c+'_b'],
+                name=node.name + '_split_c',
+                input_name=input_c + '_expand_out_c_' + str(add_nodes - 1),
+                output_names=[input_c + '_f', input_c + '_b'],
                 axis=0
             )
 
@@ -1219,8 +1267,9 @@ def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, No
             b_back=b_back,
             hidden_size=hidden_size,
             input_size=input_size,
-            input_names=[node.inputs[0] + '_expand_out_' + str(add_nodes-1), input_h+'_f', input_c+'_f', input_h+'_b', input_c+'_b'],
-            output_names=[node.outputs[0]+'_5d_out', output_h+'_f', output_c+'_f', output_h+'_b', output_c+'_b'],
+            input_names=[node.inputs[0] + '_expand_out_' + str(add_nodes - 1), input_h + '_f', input_c + '_f', input_h + '_b',
+                         input_c + '_b'],
+            output_names=[node.outputs[0] + '_5d_out', output_h + '_f', output_c + '_f', output_h + '_b', output_c + '_b'],
             inner_activation=inner_activation,
             cell_state_update_activation=cell_state_update_activation,
             output_activation=output_activation,
@@ -1231,24 +1280,23 @@ def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, No
             coupled_input_forget_gate=input_forget,
             cell_clip_threshold=clip_threshold
         )
-                
+
         # Combine output_h and output_c
         builder.add_concat_nd(
-            name=node.name+'concat_output_h',
-            input_names=[output_h+'_f', output_h+'_b'],
+            name=node.name + 'concat_output_h',
+            input_names=[output_h + '_f', output_h + '_b'],
             output_name=output_h_5d,
             axis=0
         )
 
         builder.add_concat_nd(
-            name=node.name+'concat_output_c',
-            input_names=[output_c+'_f', output_c+'_b'],
+            name=node.name + 'concat_output_c',
+            input_names=[output_c + '_f', output_c + '_b'],
             output_name=output_c_5d,
             axis=0
         )
     else:
         err.unsupported_op_configuration(builder, node, graph, "Unsupported direction {} for LSTM".format(direction))
-
 
     # CoreML output is [Seq Len, Batch Size, Num Dir * Hidden Size, 1, 1]
     # Return output as [Seq Len, Num Dir, Batch Size, Hidden Size]
@@ -1258,15 +1306,15 @@ def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, No
     #       c. Permute to fix the order [Seq Len, Num Dir, Batch Size, Hidden Size, 1]
     builder.add_rank_preserving_reshape(
         name=node.name + '_reshape_',
-        input_name=node.outputs[0]+'_5d_out',
-        output_name=node.outputs[0]+'_5d_reshaped',
+        input_name=node.outputs[0] + '_5d_out',
+        output_name=node.outputs[0] + '_5d_reshaped',
         output_shape=[0, 0, direction, -1, 0]
     )
 
     builder.add_squeeze(
-        name=node.name+'_squeeze_out',
-        input_name=node.outputs[0]+'_5d_reshaped',
-        output_name=node.outputs[0]+'_4d',
+        name=node.name + '_squeeze_out',
+        input_name=node.outputs[0] + '_5d_reshaped',
+        output_name=node.outputs[0] + '_4d',
         axes=[-1]
     )
 
@@ -1279,17 +1327,18 @@ def _convert_lstm(builder, node, graph, err):  # type: (NeuralNetworkBuilder, No
 
     # Squeeze dimensions of output_h and output_c
     builder.add_squeeze(
-        name=node.name+'_squeeze_out_h',
+        name=node.name + '_squeeze_out_h',
         input_name=output_h_5d,
         output_name=output_h,
         axes=[-1, -2]
     )
     builder.add_squeeze(
-        name=node.name+'_squeeze_out_c',
+        name=node.name + '_squeeze_out_c',
         input_name=output_c_5d,
         output_name=output_c,
         axes=[-1, -2]
     )
+
 
 def _convert_logical(builder, node, graph, err):
     '''
@@ -1304,11 +1353,11 @@ def _convert_logical(builder, node, graph, err):
         mode=mode
     )
 
+
 def _convert_pad(builder, node, graph, err):
     '''
     convert to CoreML Padding / ConstantPadding Layer:
-    https://github.com/apple/coremltools/blob/655b3be5cc0d42c3c4fa49f0f0e4a93a26b3e492/mlmodel/format/NeuralNetwork.proto#L4397
-    https://github.com/apple/coremltools/blob/655b3be5cc0d42c3c4fa49f0f0e4a93a26b3e492/mlmodel/format/NeuralNetwork.proto#L1822
+    https://github.com/apple/coremltools/blob/1afb9cb567a8a608b73ed53315319e97d50b85d0/mlmodel/format/NeuralNetwork.proto#L4554
     '''
     mode = node.attrs.get('mode', 'constant')
 
@@ -1317,20 +1366,75 @@ def _convert_pad(builder, node, graph, err):
     except (UnicodeDecodeError, AttributeError):
         pass
 
-    if mode == 'constant':    
-        pads = node.attrs.get('pads', [])
-        value = node.attrs.get('value', 0.0)
+    if mode == 'constant':
+        inputs = [node.inputs[0]]
+        pad_value = node.attrs.get('value', 0.0)
+        pads = node.attrs.get('pads', None)
+        if pads is None:
+            # it is either constant pad values, or shape comes from other node
+            if len(node.inputs) > 1:
+                pads_node_id = node.inputs[1]
+                if pads_node_id in node.input_tensors:
+                    pads = node.input_tensors[pads_node_id]
+                else:
+                    inputs.append(pads_node_id)
+                    pads = []
+            else:
+                raise NotImplementedError()
+
+        # ONNX padding order is:
+        # dim_0_begin, dim_1_begin, ... , dim_0_end, ..., dim_n_end.
+        # n is the dimension of input. assume zero-dimensions in the beginning
+        # CoreML 3.4 order is
+        # dim_0_begin, dim_0_end, ..., dim_n_begin, dim_n_end.
+        if len(pads) > 0:
+            hp = len(pads) // 2
+            pads = [[pads[z], pads[z + hp]] for z in range(hp)]
+            pads = [y for x in pads for y in x]
 
         builder.add_constant_pad(
             name=node.name,
-            input_names=node.inputs,
+            input_names=inputs,
             output_name=node.outputs[0],
-            value=value,
+            value=pad_value,
             pad_to_given_output_size_mode=False,
             pad_amounts=pads
         )
     else:
         _convert_pad_5d(builder, node, graph, err)
+
+
+def _convert_range(builder: NeuralNetworkBuilder, node, graph, err):
+    """
+    convert to CoreML RangeStaticLayer:
+    https://github.com/apple/coremltools/blob/655b3be5cc0d42c3c4fa49f0f0e4a93a26b3e492/mlmodel/format/NeuralNetwork.proto#L5166
+
+    INPUTS
+    start: T
+        Scalar. First entry for the range of output values.
+    limit: T
+        Scalar. Exclusive upper limit for the range of output values.
+    delta: T
+        Scalar. Value to step by.
+
+    OUTPUTS
+    output: T
+        A 1-D tensor with same type as the inputs containing generated range of values.
+    """
+    start, end, step = node.inputs
+
+    for k, W in node.input_tensors.items():
+        builder.add_load_constant_nd(node.name + '_range_const_' + k, k, constant_value=W, shape=(1,))
+
+    # inputs = [end, start, step]
+    inputs = [end]
+
+    builder.add_range_dynamic(
+        name=node.name,
+        input_names=inputs,
+        output_name=node.outputs[0]
+    )
+
 
 def _convert_matmul(builder, node, graph, err):
     '''
@@ -1346,7 +1450,7 @@ def _convert_matmul(builder, node, graph, err):
     if W is not None:
         if len(W.shape) != 2:
             # since weight as parameter in batchedMatMul layer must be rank 2
-            builder.add_load_constant_nd(node.name + '_const_weight_input', weight_name, constant_value=W,shape=W.shape)
+            builder.add_load_constant_nd(node.name + '_const_weight_input', weight_name, constant_value=W, shape=W.shape)
         else:
             weight_as_layer_parameter = True
 
@@ -1362,6 +1466,7 @@ def _convert_matmul(builder, node, graph, err):
                                     input_names=[node.inputs[0], weight_name],
                                     output_name=node.outputs[0])
 
+
 def _convert_max(builder, node, graph, err):
     '''
     convert to CoreML Max Broadcastable Layer:
@@ -1369,6 +1474,7 @@ def _convert_max(builder, node, graph, err):
     '''
     load_input_constants(builder, node, graph, err)
     add_broadcastable_op_chain(builder, node, err, builder.add_max_broadcastable)
+
 
 def _convert_mean(builder, node, graph, err):
     '''
@@ -1381,16 +1487,17 @@ def _convert_mean(builder, node, graph, err):
 
     builder.add_load_constant_nd(
         name=node.name + '_divider',
-        output_name=output_name+'_divider',
+        output_name=output_name + '_divider',
         constant_value=np.array(number_of_inputs),
         shape=[1]
     )
     add_broadcastable_op_chain(builder, node, err, builder.add_add_broadcastable)
     builder.add_divide_broadcastable(
-        name=node.name+'_mean',
-        input_names=[node.outputs[0], output_name+'_divider'],
+        name=node.name + '_mean',
+        input_names=[node.outputs[0], output_name + '_divider'],
         output_name=output_name
     )
+
 
 def _convert_pow(builder, node, graph, err):
     '''
@@ -1400,6 +1507,7 @@ def _convert_pow(builder, node, graph, err):
     load_input_constants(builder, node, graph, err)
     add_broadcastable_op_chain(builder, node, err, builder.add_pow_broadcastable)
 
+
 def _convert_randomnormal(builder, node, graph, err):
     '''
     convert to CoreML Random Normal Static Layer:
@@ -1407,15 +1515,16 @@ def _convert_randomnormal(builder, node, graph, err):
     '''
     add_random(builder, node, graph, err, builder.add_random_normal_static)
 
+
 def _convert_randomnormallike(builder, node, graph, err):
     '''
     convert to CoreML Random Normal Like Layer:
     https://github.com/apple/coremltools/blob/655b3be5cc0d42c3c4fa49f0f0e4a93a26b3e492/mlmodel/format/NeuralNetwork.proto#L4434
     '''
-     # Ignoring attribute `dtype` as CoreML internally represents tensors into 'Float'
-    mean  = node.attributes.get('mean', 0.0)
+    # Ignoring attribute `dtype` as CoreML internally represents tensors into 'Float'
+    mean = node.attributes.get('mean', 0.0)
     scale = node.attributes.get('scale', 1.0)
-    seed  = node.attributes.get('seed', -1)
+    seed = node.attributes.get('seed', -1)
 
     builder.add_random_normal_like(
         name=node.name,
@@ -1426,6 +1535,7 @@ def _convert_randomnormallike(builder, node, graph, err):
         seed=seed
     )
 
+
 def _convert_randomuniform(builder, node, graph, err):
     '''
     convert to CoreML Random Uniform Static Layer:
@@ -1433,15 +1543,16 @@ def _convert_randomuniform(builder, node, graph, err):
     '''
     add_random(builder, node, graph, err, builder.random_uniform_static)
 
+
 def _convert_randomuniformlike(builder, node, graph, err):
     '''
     convert to CoreML Random Normal Like Layer:
     https://github.com/apple/coremltools/blob/655b3be5cc0d42c3c4fa49f0f0e4a93a26b3e492/mlmodel/format/NeuralNetwork.proto#L4503
     '''
-     # Ignoring attribute `dtype` as CoreML internally represents tensors into 'Float'
-    mean  = node.attributes.get('mean', 0.0)
+    # Ignoring attribute `dtype` as CoreML internally represents tensors into 'Float'
+    mean = node.attributes.get('mean', 0.0)
     scale = node.attributes.get('scale', 1.0)
-    seed  = node.attributes.get('seed', -1)
+    seed = node.attributes.get('seed', -1)
 
     builder.add_random_uniform_like(
         name=node.name,
@@ -1452,6 +1563,7 @@ def _convert_randomuniformlike(builder, node, graph, err):
         seed=seed
     )
 
+
 def _convert_min(builder, node, graph, err):
     '''
     convert to CoreML Min Broadcastable Layer:
@@ -1459,6 +1571,7 @@ def _convert_min(builder, node, graph, err):
     '''
     load_input_constants(builder, node, graph, err)
     add_broadcastable_op_chain(builder, node, err, builder.add_min_broadcastable)
+
 
 def _convert_mod(builder, node, graph, err):
     '''
@@ -1468,6 +1581,7 @@ def _convert_mod(builder, node, graph, err):
     load_input_constants(builder, node, graph, err)
     add_broadcastable_op_chain(builder, node, err, builder.add_mod_broadcastable)
 
+
 def _convert_mul(builder, node, graph, err):
     '''
     convert to CoreML Multiply Broadcastable Layer:
@@ -1475,6 +1589,7 @@ def _convert_mul(builder, node, graph, err):
     '''
     load_input_constants(builder, node, graph, err)
     add_broadcastable_op_chain(builder, node, err, builder.add_multiply_broadcastable)
+
 
 def _convert_nonzero(builder, node, graph, err):
     '''
@@ -1487,6 +1602,7 @@ def _convert_nonzero(builder, node, graph, err):
         input_name=node.inputs[0],
         output_name=node.outputs[0]
     )
+
 
 def _convert_pool(builder, node, graph, err):
     '''
@@ -1515,6 +1631,7 @@ def _convert_pool(builder, node, graph, err):
 
     _add_conv_like_op(_add_pool, _get_pool_params, params_dict,
                       builder, node, graph, err)
+
 
 def _convert_reduce(builder, node, graph, err):
     '''
@@ -1624,7 +1741,8 @@ def _convert_reduce(builder, node, graph, err):
         )
     else:
         err.unsupported_op_configuration(builder, node, graph, "Unsupported reduce operation: {}".format(op_type))
-    
+
+
 def _convert_reshape(builder, node, graph, err):
     '''
     convert to CoreML Reshape Static Layer:
@@ -1633,7 +1751,7 @@ def _convert_reshape(builder, node, graph, err):
     shape_node = node.inputs[1]
     if shape_node in node.input_tensors:
         output_shape = node.input_tensors[shape_node].astype(np.int64)
-    
+
         # if rank is same, then call rank preserving reshape
         if node.inputs[0] not in graph.shape_dict:
             # If Input shape is not present and output shape is known
@@ -1646,7 +1764,7 @@ def _convert_reshape(builder, node, graph, err):
                 output_shape=output_shape
             )
             return
-    
+
         len_of_input_shape = builder._get_rank(node.inputs[0])
         if len(output_shape) == len_of_input_shape:
             builder.add_rank_preserving_reshape(
@@ -1669,7 +1787,9 @@ def _convert_reshape(builder, node, graph, err):
                         num_neg_ones += 1
 
                 if num_neg_ones > 1:
-                     err.unsupported_op_configuration(builder, node, graph, "Error in ONNX model: At most one dimension of new shape can be -1, found {}".format(num_neg_ones))
+                    err.unsupported_op_configuration(builder, node, graph,
+                                                     "Error in ONNX model: At most one dimension of new shape can be -1, found {}".format(
+                                                         num_neg_ones))
 
                 if num_neg_ones + num_zeros == len(output_shape):
                     # Rank of output is less than input
@@ -1681,7 +1801,7 @@ def _convert_reshape(builder, node, graph, err):
                         new_shape.append(output_shape[i])
                         if output_shape[i] == -1:
                             break
-                    while i < len_of_input_shape-1:
+                    while i < len_of_input_shape - 1:
                         new_shape.append(1)
                         i += 1
 
@@ -1716,6 +1836,7 @@ def _convert_reshape(builder, node, graph, err):
             output_name=node.outputs[0],
         )
 
+
 def _convert_resize(builder, node, graph, err):
     '''
     convert to CoreML Upsample or Resize Bilinear Layer:
@@ -1724,11 +1845,18 @@ def _convert_resize(builder, node, graph, err):
     '''
     mode = node.attrs.get('mode', 'nearest')
     if node.inputs[1] not in node.input_tensors:
-        return err.unsupported_op_configuration(builder, node, graph, "Scaling factor unknown!! CoreML does not support dynamic scaling for Resize")
-    
+        return err.unsupported_op_configuration(builder, node, graph,
+                                                "Scaling factor unknown!! CoreML does not support dynamic scaling for Resize")
+
     mode = 'NN' if mode == 'nearest' else 'BILINEAR'
-    scale = node.input_tensors[node.inputs[1]]
-    
+    scale = node.input_tensors[node.inputs[1]].tolist()
+
+    if len(scale) == 0:
+        # try to infer scale from shapes
+        inp_shape = graph.shape_dict[node.inputs[0]]
+        out_shape = graph.shape_dict[node.outputs[0]]
+        scale = [int(a / b) for a, b in zip(out_shape, inp_shape)]
+
     builder.add_upsample(
         name=node.name,
         scaling_factor_h=scale[-2],
@@ -1738,13 +1866,14 @@ def _convert_resize(builder, node, graph, err):
         mode=mode
     )
 
+
 def _convert_reverse_sequence(builder, node, graph, err):
     '''
     convert to CoreML Reverse Sequence Layer:
     https://github.com/apple/coremltools/blob/655b3be5cc0d42c3c4fa49f0f0e4a93a26b3e492/mlmodel/format/NeuralNetwork.proto#L3577
     '''
     batch_axis = node.attrs.get('batch_axis', 1)
-    time_axis  = node.attrs.get('time_axis', 0)
+    time_axis = node.attrs.get('time_axis', 0)
 
     output_name = node.outputs[0]
     add_transpose = False
@@ -1752,7 +1881,7 @@ def _convert_reverse_sequence(builder, node, graph, err):
         output_name += '_before_reverse'
         batch_axis, time_axis = time_axis, batch_axis
         add_transpose = True
-    
+
     builder.add_reverse_sequence(
         name=node.name,
         input_names=node.inputs,
@@ -1769,11 +1898,12 @@ def _convert_reverse_sequence(builder, node, graph, err):
         axes = list(range(rank))
         axes[batch_axis], axes[time_axis] = axes[time_axis], axes[batch_axis]
         builder.add_transpose(
-            name=node.name+'_transpose',
+            name=node.name + '_transpose',
             axes=axes,
             input_name=output_name,
             output_name=node.outputs[0]
         )
+
 
 def _convert_roialign(builder, node, graph, err):
     '''
@@ -1790,68 +1920,69 @@ def _convert_roialign(builder, node, graph, err):
 
     if node.inputs[2] in graph.inputs:
         graph.inputs.remove(node.inputs[2])
-    
+
     builder.add_expand_dims(
-        name=node.name+'_expand_0',
+        name=node.name + '_expand_0',
         input_name=node.inputs[0],
-        output_name=node.inputs[0]+'_expanded',
+        output_name=node.inputs[0] + '_expanded',
         axes=[0]
     )
     node.inputs[0] += '_expanded'
 
     builder.add_expand_dims(
-        name=node.name+'_expand_2',
+        name=node.name + '_expand_2',
         input_name=node.inputs[2],
-        output_name=node.inputs[2]+'_expanded',
+        output_name=node.inputs[2] + '_expanded',
         axes=[1]
     )
     node.inputs[2] += '_expanded'
 
     builder.add_concat_nd(
-        name=node.name+'_concat_indices',
+        name=node.name + '_concat_indices',
         input_names=[node.inputs[2], node.inputs[1]],
-        output_name=node.inputs[1]+'_rois',
+        output_name=node.inputs[1] + '_rois',
         axis=1
     )
     node.inputs[1] += '_rois'
-    
+
     builder.add_expand_dims(
-        name=node.name+'_expand_1',
+        name=node.name + '_expand_1',
         input_name=node.inputs[1],
-        output_name=node.inputs[1]+'_expanded',
+        output_name=node.inputs[1] + '_expanded',
         axes=[1, 3, 4]
     )
     node.inputs[1] += '_expanded'
 
     builder.add_crop_resize(
-        name=node.name+'_crop_resize',
+        name=node.name + '_crop_resize',
         input_names=[node.inputs[0], node.inputs[1]],
-        output_name=node.outputs[0]+'_crop_resized',
-        target_height=target_height*sampling_ratio,
-        target_width=target_width*sampling_ratio,
+        output_name=node.outputs[0] + '_crop_resized',
+        target_height=target_height * sampling_ratio,
+        target_width=target_width * sampling_ratio,
         mode='ROI_ALIGN_MODE',
         box_indices_mode='CORNERS_WIDTH_FIRST',
         spatial_scale=spatial_scale
     )
 
     builder.add_squeeze(
-        name=node.name+'_squeeze',
-        input_name=node.outputs[0]+'_crop_resized',
-        output_name=node.outputs[0]+'_crop_resized_squeezed',
+        name=node.name + '_squeeze',
+        input_name=node.outputs[0] + '_crop_resized',
+        output_name=node.outputs[0] + '_crop_resized_squeezed',
         axes=[1]
     )
 
     builder.add_pooling(
-        name=node.name+'_pool',
+        name=node.name + '_pool',
         height=sampling_ratio,
         width=sampling_ratio,
         layer_type=mode,
-        input_name=node.outputs[0]+'_crop_resized_squeezed',
+        input_name=node.outputs[0] + '_crop_resized_squeezed',
         output_name=node.outputs[0],
         stride_height=sampling_ratio,
         stride_width=sampling_ratio,
         padding_type='VALID'
     )
+
 
 def _convert_round(builder, node, graph, err):
     '''
@@ -1863,6 +1994,7 @@ def _convert_round(builder, node, graph, err):
         input_name=node.inputs[0],
         output_name=node.outputs[0]
     )
+
 
 def _convert_scatter(builder, node, graph, err):
     '''
@@ -1877,22 +2009,24 @@ def _convert_scatter(builder, node, graph, err):
         axis=axis
     )
 
+
 def _convert_size(builder, node, graph, err):
     '''
     convert to CoreML GetShape and ReduceProd Layer:
     https://github.com/apple/coremltools/blob/655b3be5cc0d42c3c4fa49f0f0e4a93a26b3e492/mlmodel/format/NeuralNetwork.proto#L5131
     https://github.com/apple/coremltools/blob/655b3be5cc0d42c3c4fa49f0f0e4a93a26b3e492/mlmodel/format/NeuralNetwork.proto#L4722
-    ''' 
+    '''
     builder.add_get_shape(
         name=node.name,
         input_name=node.inputs[0],
-        output_name=node.inputs[0]+'_getshape'
+        output_name=node.inputs[0] + '_getshape'
     )
     builder.add_reduce_prod(
-        name=node.name+'_reduce_prod',
-        input_name=node.inputs[0]+'_getshape',
+        name=node.name + '_reduce_prod',
+        input_name=node.inputs[0] + '_getshape',
         output_name=node.outputs[0]
     )
+
 
 def _convert_slice_ir4v9(builder, node, graph, err):
     '''
@@ -1946,13 +2080,18 @@ def _convert_slice_ir4v9(builder, node, graph, err):
         end_masks=end_masks
     )
 
+
 def _convert_slice(builder, node, graph, err):
     '''
     convert to CoreML Slice Static Layer:
     https://github.com/apple/coremltools/blob/655b3be5cc0d42c3c4fa49f0f0e4a93a26b3e492/mlmodel/format/NeuralNetwork.proto#L5082
-    ''' 
+    '''
     if len(node.inputs) == 1:
-       return _convert_slice_ir4v9(builder, node, graph, err)
+        return _convert_slice_ir4v9(builder, node, graph, err)
+
+    if len(node.inputs) == 5:
+        # return _convert_slice_ir4v9(builder, node, graph, err)
+        return _convert_slice_ir6v11(builder, node, graph, err)
 
     if node.inputs[0] not in graph.shape_dict:
         err.unsupported_op_configuration(builder, node, graph, "Input shape not available")
@@ -1978,10 +2117,10 @@ def _convert_slice(builder, node, graph, err):
 
     if add_static_slice_layer:
         ip_starts = node.input_tensors[node.inputs[1]]
-        ip_ends   = node.input_tensors[node.inputs[2]]
-        axes  = node.input_tensors[node.inputs[3]] if len(node.inputs) > 3 else default_axes
-        ip_steps  = node.input_tensors[node.inputs[4]] if len(node.inputs) > 4 else None
-        
+        ip_ends = node.input_tensors[node.inputs[2]]
+        axes = node.input_tensors[node.inputs[3]] if len(node.inputs) > 3 else default_axes
+        ip_steps = node.input_tensors[node.inputs[4]] if len(node.inputs) > 4 else None
+
         starts = [0] * len_of_data
         ends = [0] * len_of_data
         steps = [1] * len_of_data
@@ -2013,7 +2152,62 @@ def _convert_slice(builder, node, graph, err):
             end_masks=end_masks
         )
     else:
-        err.unsupported_op_configuration(builder, node, graph, "CoreML does not support Dynamic Slice with unknown axes. Please provide Custom Function/Layer")
+        # TODO: add support
+        err.unsupported_op_configuration(builder, node, graph, "Dynamic Slice not implemented yet")
+
+
+def _convert_slice_ir6v11(builder, node, graph, err):
+    '''
+    convert to CoreML Slice Static / Dynamic Layer:
+    https://github.com/apple/coremltools/blob/655b3be5cc0d42c3c4fa49f0f0e4a93a26b3e492/mlmodel/format/NeuralNetwork.proto#L5082
+    '''
+
+    if node.inputs[0] in graph.shape_dict:
+        data_shape = graph.shape_dict[node.inputs[0]]
+    else:
+        rank = builder._get_rank(node.inputs[0])
+        if rank == -1:
+            return err.unsupported_op_configuration(builder, node, graph, "Input shape not available")
+        data_shape = [INT_MAX] * rank
+
+    len_of_data = len(data_shape)
+    begin_masks = [True] * len_of_data
+    end_masks = [True] * len_of_data
+
+    # input, start, end, axes, steps
+    ip_starts, ip_ends, axes, ip_steps = [node.input_tensors[z] for z in node.inputs[1:]]
+
+    starts = [0] * len_of_data
+    ends = [0] * len_of_data
+    steps = [1] * len_of_data
+
+    for i in range(len(axes)):
+        current_axes = axes[i]
+        starts[current_axes] = ip_starts[i]
+        ends[current_axes] = ip_ends[i]
+        # n <= end <= INT_MAX implies end is -1, hence end_mask should be True
+        # otherwise end_mask should be False
+        if ends[current_axes] < data_shape[current_axes]:
+            # this means end is not -1
+            end_masks[current_axes] = False
+
+        if starts[current_axes] != 0:
+            begin_masks[current_axes] = False
+
+        if isinstance(ip_steps, list):
+            steps[current_axes] = ip_steps[i]
+
+    builder.add_slice_static(
+        name=node.name,
+        input_name=node.inputs[0],
+        output_name=node.outputs[0],
+        begin_ids=starts,
+        end_ids=ends,
+        strides=steps,
+        begin_masks=begin_masks,
+        end_masks=end_masks
+    )
+
 
 def _convert_softmax_nd(builder, node, graph, err):
     '''
@@ -2029,28 +2223,30 @@ def _convert_softmax_nd(builder, node, graph, err):
     )
     if node.op_type == 'LogSoftmax':
         builder.add_unary(
-            name=node.name+'_log',
-            input_name=node.outputs[0]+'_softmax',
+            name=node.name + '_log',
+            input_name=node.outputs[0] + '_softmax',
             output_name=node.outputs[0],
             mode='log'
         )
+
 
 def _convert_softmax(builder, node, graph, err):
     '''
     convert to CoreML SoftMax ND Layer:
     https://github.com/apple/coremltools/blob/655b3be5cc0d42c3c4fa49f0f0e4a93a26b3e492/mlmodel/format/NeuralNetwork.proto#3547
     '''
+
     def add_softmax(output_name, rank=-1, axis=-3):
         softmax_axis = 3
-        axes = list(range(5-rank))
+        axes = list(range(5 - rank))
         if axis < 0:
             axis = rank + axis
         axis += len(axes)
-        softmax_output_name = output_name+'_expanded'
-        
+        softmax_output_name = output_name + '_expanded'
+
         expanded_node = node.name + '_' + node.inputs[0] + '_expanded'
         builder.add_expand_dims(
-            name=node.name+'_expand_dims',
+            name=node.name + '_expand_dims',
             input_name=node.inputs[0],
             output_name=expanded_node,
             axes=axes
@@ -2066,11 +2262,11 @@ def _convert_softmax(builder, node, graph, err):
                 name=node.name + '_transpose',
                 axes=transpose_axes,
                 input_name=input_name,
-                output_name=input_name+'_transposed'
+                output_name=input_name + '_transposed'
             )
             input_name += '_transposed'
             softmax_output_name += '_transposed'
-        
+
         builder.add_softmax(
             name=node.name,
             input_name=input_name,
@@ -2082,15 +2278,15 @@ def _convert_softmax(builder, node, graph, err):
             transpose_axes[-3], transpose_axes[axis] = transpose_axes[axis], transpose_axes[-3]
 
             builder.add_transpose(
-                name=node.name+'_transpose_back',
+                name=node.name + '_transpose_back',
                 axes=transpose_axes,
                 input_name=softmax_output_name,
                 output_name=softmax_output_name + '_transposed_back'
             )
             softmax_output_name += '_transposed_back'
-        
+
         builder.add_squeeze(
-            name=node.name+'_squeeze_dims',
+            name=node.name + '_squeeze_dims',
             input_name=softmax_output_name,
             output_name=output_name,
             axes=axes
@@ -2104,13 +2300,14 @@ def _convert_softmax(builder, node, graph, err):
     if node.op_type == 'LogSoftmax':
         add_softmax(node.outputs[0] + '_softmax', rank=rank, axis=axis)
         builder.add_unary(
-            name=node.name+'_log',
+            name=node.name + '_log',
             input_name=node.outputs[0] + '_softmax',
             output_name=node.outputs[0],
             mode='log'
         )
     else:
         add_softmax(node.outputs[0], rank=rank, axis=axis)
+
 
 def _convert_split(builder, node, graph, err):
     '''
@@ -2120,7 +2317,7 @@ def _convert_split(builder, node, graph, err):
     axis = node.attrs.get('axis', 0)
     split = node.attrs.get('split', None)
     num_splits = len(node.outputs) if split is None else 2
-        
+
     builder.add_split_nd(
         name=node.name,
         input_name=node.inputs[0],
@@ -2129,6 +2326,7 @@ def _convert_split(builder, node, graph, err):
         num_splits=num_splits,
         split_sizes=split
     )
+
 
 def _convert_shape(builder, node, graph, err):
     '''
@@ -2140,6 +2338,7 @@ def _convert_shape(builder, node, graph, err):
         input_name=node.inputs[0],
         output_name=node.outputs[0]
     )
+
 
 def _convert_squeeze(builder, node, graph, err):
     '''
@@ -2154,6 +2353,7 @@ def _convert_squeeze(builder, node, graph, err):
         axes=axes
     )
 
+
 def _convert_sub(builder, node, graph, err):
     '''
     convert to CoreML Subtract Broadcastable Layer:
@@ -2161,6 +2361,7 @@ def _convert_sub(builder, node, graph, err):
     '''
     load_input_constants(builder, node, graph, err)
     add_broadcastable_op_chain(builder, node, err, builder.add_subtract_broadcastable)
+
 
 def _convert_tanh(builder, node, graph, err):
     '''
@@ -2174,6 +2375,7 @@ def _convert_tanh(builder, node, graph, err):
         output_name=node.outputs[0]
     )
 
+
 def _convert_tile(builder, node, graph, err):
     '''
     convert to CoreML Tile Layer:
@@ -2181,13 +2383,15 @@ def _convert_tile(builder, node, graph, err):
     '''
     load_input_constants(builder, node, graph, err)
     if node.inputs[1] not in node.input_tensors:
-        err.unsupported_op_configuration(builder, node, graph, "CoreML Tile layer does not support dynamic 'reps'. 'reps' should be known statically")
+        err.unsupported_op_configuration(builder, node, graph,
+                                         "CoreML Tile layer does not support dynamic 'reps'. 'reps' should be known statically")
     builder.add_tile(
         name=node.name,
         input_name=node.inputs[0],
         output_name=node.outputs[0],
         reps=node.input_tensors[node.inputs[1]].astype(np.int32).tolist()
     )
+
 
 def _convert_topk(builder, node, graph, err):
     '''
@@ -2201,7 +2405,7 @@ def _convert_topk(builder, node, graph, err):
     sorted_order = node.attrs.get("sorted", True)
     if "sorted" in node.attrs:
         err.unsupported_feature_warning(node, "Sorted Order attribute('sorted') is currently ignored in CoreML 3.0")
-    
+
     builder.add_topk(
         name=node.name,
         input_names=node.inputs,
@@ -2210,19 +2414,20 @@ def _convert_topk(builder, node, graph, err):
         use_bottom_k=bottom_k
     )
 
+
 def _convert_transpose(builder, node, graph, err):
     '''
     convert to CoreML Transpose Layer:
     https://github.com/apple/coremltools/blob/655b3be5cc0d42c3c4fa49f0f0e4a93a26b3e492/mlmodel/format/NeuralNetwork.proto#L3426
     '''
-    
+
     axes = node.attrs.get('perm', [])
     # If 'perm' not provided, the reverse the dimensions
-    if axes == []:
+    if len(axes) == 0:
         rank = builder._get_rank(node.inputs[0])
         if rank == -1:
             return err.unsupported_op_configuration(builder, node, graph, "Rank unknown for input")
-        axes = list(range(-1, -(rank+1), -1))
+        axes = list(range(-1, -(rank + 1), -1))
 
     builder.add_transpose(
         name=node.name,
@@ -2230,6 +2435,7 @@ def _convert_transpose(builder, node, graph, err):
         input_name=node.inputs[0],
         output_name=node.outputs[0]
     )
+
 
 def _convert_unsqueeze(builder, node, graph, err):
     '''
@@ -2244,6 +2450,7 @@ def _convert_unsqueeze(builder, node, graph, err):
         axes=axes
     )
 
+
 def _convert_where(builder, node, graph, err):
     '''
     convert to CoreML WhereBroadcastable Layer:
@@ -2255,6 +2462,7 @@ def _convert_where(builder, node, graph, err):
         input_names=node.inputs,
         output_name=node.outputs[0],
     )
+
 
 _ONNX_NODE_REGISTRY_ND = {
     "Abs": _convert_abs,
@@ -2316,6 +2524,7 @@ _ONNX_NODE_REGISTRY_ND = {
     "Not": _convert_logical,
     "Or": _convert_logical,
     "Pad": _convert_pad,
+    "Range": _convert_range,
     "Pow": _convert_pow,
     "PRelu": _convert_prelu,
     "RandomNormal": _convert_randomnormal,
@@ -2366,7 +2575,9 @@ _ONNX_NODE_REGISTRY_ND = {
     "Where": _convert_where
 }
 
-def _get_node_converter_fn(builder, node, err):  # type: (NeuralNetworkBuilder, Node, ErrorHandling) -> Callable[[NeuralNetworkBuilder, Node, Graph, ErrorHandling], None]
+
+def _get_node_converter_fn(builder, node,
+                           err):  # type: (NeuralNetworkBuilder, Node, ErrorHandling) -> Callable[[NeuralNetworkBuilder, Node, Graph, ErrorHandling], None]
     """
     Get the right converter function for ONNX node op_type
     """
@@ -2384,7 +2595,7 @@ def _get_node_converter_fn(builder, node, err):  # type: (NeuralNetworkBuilder, 
     else:
         return err.unsupported_op(node)
 
+
 def _convert_node_nd(builder, node, graph, err):  # type: (NeuralNetworkBuilder, Node, Graph, ErrorHandling) -> None
     converter_fn = _get_node_converter_fn(builder, node, err)
     return converter_fn(builder, node, graph, err)
-

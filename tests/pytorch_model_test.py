@@ -3,7 +3,6 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-
 import unittest
 import onnx
 from onnx_coreml import convert
@@ -11,8 +10,8 @@ from onnx_coreml.converter import SupportedVersion
 import numpy as np
 import numpy.testing as npt  # type: ignore
 from tests._test_utils import _assert_outputs
-import torch # type: ignore
-import torch.nn as nn # type: ignore
+import torch  # type: ignore
+import torch.nn as nn  # type: ignore
 import torch.nn.functional as F
 import shutil
 import tempfile
@@ -26,9 +25,11 @@ torch.manual_seed(10)
 
 MIN_MACOS_VERSION_10_15 = (10, 15)
 
-DEBUG = False
+DEBUG = True
 
-def _test_torch_model_single_io(torch_model, torch_input_shape, coreml_input_shape, minimum_ios_deployment_target='12', decimal=4, opset_version=9):
+
+def _test_torch_model_single_io(torch_model, torch_input_shape, coreml_input_shape, minimum_ios_deployment_target='13', decimal=4,
+                                opset_version=11, keep_initializers_as_inputs=None):
     # run torch model
     torch_input = torch.rand(*torch_input_shape)
     torch_out_raw = torch_model(torch_input)
@@ -42,7 +43,8 @@ def _test_torch_model_single_io(torch_model, torch_input_shape, coreml_input_sha
     if DEBUG:
         model_dir = '/tmp'
     onnx_file = os.path.join(model_dir, 'torch_model.onnx')
-    torch.onnx.export(torch_model, torch_input, onnx_file, opset_version=opset_version)
+    torch.onnx.export(torch_model, torch_input, onnx_file, opset_version=opset_version,
+                      keep_initializers_as_inputs=keep_initializers_as_inputs)
     onnx_model = onnx.load(onnx_file)
 
     # convert to coreml and run
@@ -53,10 +55,13 @@ def _test_torch_model_single_io(torch_model, torch_input_shape, coreml_input_sha
     input_name = [i.name for i in onnx_model.graph.input if i.name not in initializer_names][0]
     input_numpy = torch_input.detach().numpy()
     if SupportedVersion.is_nd_array_supported(minimum_ios_deployment_target):
-        input_dict = {input_name: input_numpy} # type: ignore
+        input_dict = {input_name: input_numpy}  # type: ignore
     else:
         input_dict = {input_name: np.reshape(input_numpy, coreml_input_shape)}  # type: ignore
+
+    coreml_model.save(model_dir + '/torch_model.mlmodel')
     coreml_out = coreml_model.predict(input_dict, useCPUOnly=True)[output_name]
+
     if DEBUG:
         coreml_model.save(model_dir + '/torch_model.mlmodel')
         print('coreml_out')
@@ -67,16 +72,17 @@ def _test_torch_model_single_io(torch_model, torch_input_shape, coreml_input_sha
         print('torch out shape: ', torch_out.shape)
 
     # compare
-    _assert_outputs([torch_out], [coreml_out], decimal=decimal) # type: ignore
+    _assert_outputs([torch_out], [coreml_out], decimal=decimal)  # type: ignore
 
     # delete onnx model
     if not DEBUG:
         if os.path.exists(model_dir):
             shutil.rmtree(model_dir)
 
+
 class OnnxModelTest(unittest.TestCase):
 
-    def test_functional_average_pool(self, minimum_ios_deployment_target='12'):
+    def test_functional_average_pool(self, minimum_ios_deployment_target='13'):
         class Net(nn.Module):
             def __init__(self):
                 super(Net, self).__init__()
@@ -87,19 +93,18 @@ class OnnxModelTest(unittest.TestCase):
 
         torch_model = Net()
         torch_model.train(False)
-        if minimum_ios_deployment_target == '12':
-            coreml_shape = (1,64,64)
+        if minimum_ios_deployment_target == '13':
+            coreml_shape = (1, 64, 64)
         else:
-            coreml_shape = (1,1,64,64)
-        _test_torch_model_single_io(torch_model, (1, 1, 64, 64), coreml_shape,
-                                        minimum_ios_deployment_target=minimum_ios_deployment_target)
+            coreml_shape = (1, 1, 64, 64)
+        _test_torch_model_single_io(torch_model, (1, 1, 64, 64), coreml_shape, minimum_ios_deployment_target=minimum_ios_deployment_target)
 
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
     def test_functional_average_pool_disable_rank5_mapping(self):
         self.test_functional_average_pool(minimum_ios_deployment_target='13')
 
-    def test_linear_no_bias(self, minimum_ios_deployment_target='12'):  # type: () -> None
+    def test_linear_no_bias(self, minimum_ios_deployment_target='13'):  # type: () -> None
         class Net(nn.Module):
             def __init__(self):
                 super(Net, self).__init__()
@@ -108,9 +113,10 @@ class OnnxModelTest(unittest.TestCase):
             def forward(self, x):
                 return self.simple_nn(x)
 
-        torch_model = Net() # type: ignore
+        torch_model = Net()  # type: ignore
         torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (1,256), (256), minimum_ios_deployment_target=minimum_ios_deployment_target) # type: ignore
+        _test_torch_model_single_io(torch_model, (1, 256), (256),
+                                    minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
 
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
@@ -126,9 +132,9 @@ class OnnxModelTest(unittest.TestCase):
             def forward(self, x):
                 return self.simple_nn(x)
 
-        torch_model = Net() # type: ignore
+        torch_model = Net()  # type: ignore
         torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (1,256), (256)) # type: ignore
+        _test_torch_model_single_io(torch_model, (1, 256), (256))  # type: ignore
 
     def test_dynamic_reshape(self):  # type: () -> None
         class Net(nn.Module):
@@ -145,15 +151,15 @@ class OnnxModelTest(unittest.TestCase):
                 x = x.view(x.size()[0], -1)
                 return x
 
-        torch_model = Net() # type: ignore
+        torch_model = Net()  # type: ignore
         torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (1, 3, 100, 100), (3, 100, 100)) # type: ignore
+        _test_torch_model_single_io(torch_model, (1, 3, 100, 100), (3, 100, 100), minimum_ios_deployment_target='13')  # type: ignore
 
     def test_const_initializer1(self):  # type: () -> None
         class Net(nn.Module):
             def __init__(self):
                 super(Net, self).__init__()
-                self.ones = torch.nn.Parameter(torch.ones(1,))
+                self.ones = torch.nn.Parameter(torch.ones(1, ))
 
             def forward(self, x):
                 y = x + self.ones
@@ -162,7 +168,6 @@ class OnnxModelTest(unittest.TestCase):
         torch_model = Net()  # type: ignore
         torch_model.train(False)
         _test_torch_model_single_io(torch_model, (1, 3), (3,))  # type: ignore
-
 
     def test_const_initializer2(self):  # type: () -> None
         class Net(nn.Module):
@@ -177,7 +182,7 @@ class OnnxModelTest(unittest.TestCase):
         torch_model.train(False)
         _test_torch_model_single_io(torch_model, (1, 2, 3), (1, 2, 3))  # type: ignore
 
-    def test_conv2D_transpose(self): # type: () -> None
+    def test_conv2D_transpose(self):  # type: () -> None
         class Net(nn.Module):
             def __init__(self):
                 super(Net, self).__init__()
@@ -191,7 +196,7 @@ class OnnxModelTest(unittest.TestCase):
         torch_model.train(False)
         _test_torch_model_single_io(torch_model, (1, 1, 64, 64), (1, 64, 64))  # type: ignore
 
-    def test_conv2D_transpose_output_padding(self): # type: () -> None
+    def test_conv2D_transpose_output_padding(self):  # type: () -> None
         class Net(nn.Module):
             def __init__(self):
                 super(Net, self).__init__()
@@ -205,7 +210,7 @@ class OnnxModelTest(unittest.TestCase):
         torch_model.train(False)
         _test_torch_model_single_io(torch_model, (1, 1, 64, 64), (1, 64, 64))  # type: ignore
 
-    def test_conv2D_transpose_groups(self): # type: () -> None
+    def test_conv2D_transpose_groups(self):  # type: () -> None
         class Net(nn.Module):
             def __init__(self):
                 super(Net, self).__init__()
@@ -219,7 +224,7 @@ class OnnxModelTest(unittest.TestCase):
         torch_model.train(False)
         _test_torch_model_single_io(torch_model, (1, 4, 8, 8), (4, 8, 8))  # type: ignore
 
-    def test_conv2D_transpose_2(self): # type: () -> None
+    def test_conv2D_transpose_2(self):  # type: () -> None
         class Net(nn.Module):
             def __init__(self):
                 super(Net, self).__init__()
@@ -233,7 +238,7 @@ class OnnxModelTest(unittest.TestCase):
         torch_model.train(False)
         _test_torch_model_single_io(torch_model, (1, 1, 3, 3), (1, 3, 3))  # type: ignore
 
-    def test_pow(self): # type: () -> None
+    def test_pow(self):  # type: () -> None
         class Net(nn.Module):
             def __init__(self):
                 super(Net, self).__init__()
@@ -246,72 +251,70 @@ class OnnxModelTest(unittest.TestCase):
         torch_model.train(False)
         _test_torch_model_single_io(torch_model, (3, 2, 3), (3, 2, 3))  # type: ignore
 
-    @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
-                     'macOS 10.15+ required. Skipping test.')
-    def test_lstm(self):  # type: () -> None
-        class Net(nn.Module):
-            def __init__(self):
-                super(Net, self).__init__()
-                self.lstm = nn.LSTM(input_size=256,
-                                    hidden_size=64,
-                                    num_layers=1)
+    # @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
+    #                  'macOS 10.15+ required. Skipping test.')
+    # def test_lstm(self):  # type: () -> None
+    #     class Net(nn.Module):
+    #         def __init__(self):
+    #             super(Net, self).__init__()
+    #             self.lstm = nn.LSTM(input_size=256,
+    #                                 hidden_size=64,
+    #                                 num_layers=1)
+    #
+    #         def forward(self, x):
+    #             y = self.lstm(x)
+    #             return y
+    #
+    #     torch_model = Net()  # type: ignore
+    #     torch_model.train(False)
+    #     _test_torch_model_single_io(torch_model, (3, 1, 256), (3, 1, 256), minimum_ios_deployment_target='13')  # type: ignore
 
-            def forward(self, x):
-                y = self.lstm(x)
-                return y
+    # @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
+    #                  'macOS 10.15+ required. Skipping test.')
+    # def test_bidirlstm(self):  # type: () -> None
+    #     class Net(nn.Module):
+    #         def __init__(self):
+    #             super(Net, self).__init__()
+    #             self.lstm = nn.LSTM(input_size=256,
+    #                             hidden_size=64,
+    #                             num_layers=1,
+    #                             bidirectional=True)
+    #
+    #         def forward(self, x):
+    #             y = self.lstm(x)
+    #             return y
+    #
+    #     torch_model = Net()  # type: ignore
+    #     torch_model.train(False)
+    #     _test_torch_model_single_io(torch_model, (3, 1, 256), (3, 1, 256), minimum_ios_deployment_target='13')  # type: ignore
 
-        torch_model = Net()  # type: ignore
-        torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (3, 1, 256), (3, 1, 256), minimum_ios_deployment_target='13')  # type: ignore
-
-    @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
-                     'macOS 10.15+ required. Skipping test.')
-    def test_bidirlstm(self):  # type: () -> None
-        class Net(nn.Module):
-            def __init__(self):
-                super(Net, self).__init__()
-                self.lstm = nn.LSTM(input_size=256,
-                                hidden_size=64,
-                                num_layers=1,
-                                bidirectional=True)
-
-            def forward(self, x):
-                y = self.lstm(x)
-                return y
-
-        torch_model = Net()  # type: ignore
-        torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (3, 1, 256), (3, 1, 256), minimum_ios_deployment_target='13')  # type: ignore
-
-    @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
-                     'macOS 10.15+ required. Skipping test.')
-    def test_gru(self):  # type: () -> None
-        class Net(nn.Module):
-            def __init__(self):
-                super(Net, self).__init__()
-                self.gru = nn.GRU(input_size=256,
-                                  hidden_size=64,
-                                  num_layers=1)
-
-            def forward(self, x):
-                y = self.gru(x)
-                return y
-
-        torch_model = Net()  # type: ignore
-        torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (3, 1, 256), (3, 1, 256), minimum_ios_deployment_target='13', decimal=1)  # type: ignore
-
+    # @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
+    #                  'macOS 10.15+ required. Skipping test.')
+    # def test_gru(self):  # type: () -> None
+    #     class Net(nn.Module):
+    #         def __init__(self):
+    #             super(Net, self).__init__()
+    #             self.gru = nn.GRU(input_size=256,
+    #                               hidden_size=64,
+    #                               num_layers=1)
+    #
+    #         def forward(self, x):
+    #             y = self.gru(x)
+    #             return y
+    #
+    #     torch_model = Net()  # type: ignore
+    #     torch_model.train(False)
+    #     _test_torch_model_single_io(torch_model, (3, 1, 256), (3, 1, 256), minimum_ios_deployment_target='13', decimal=1)  # type: ignore
 
     def test_1d_conv(self):
         class Net(nn.Module):
             def __init__(self, in_channels,
-                               out_channels,
-                               kernel_size,
-                               stride=1,
-                               dilation=1,
-                               groups=1,
-                               bias=True):
-
+                         out_channels,
+                         kernel_size,
+                         stride=1,
+                         dilation=1,
+                         groups=1,
+                         bias=True):
                 super(Net, self).__init__()
 
                 self.conv = torch.nn.Conv1d(in_channels,
@@ -360,7 +363,6 @@ class OnnxModelTest(unittest.TestCase):
         torch_model.train(False)
         _test_torch_model_single_io(torch_model, (1, 3, 100, 100), (3, 100, 100))  # type: ignore
 
-
     def test_conv2d_stride(self):
         class TestModule(torch.nn.Module):
             def __init__(self):
@@ -379,7 +381,7 @@ class OnnxModelTest(unittest.TestCase):
         torch_model = TestModule()  # type: ignore
         torch_model.train(False)
         H, W = 6, 3
-        _test_torch_model_single_io(torch_model, (1,1,H,W), (1, H, W))  # type: ignore
+        _test_torch_model_single_io(torch_model, (1, 1, H, W), (1, H, W))  # type: ignore
 
     def test_conv2d_dilation(self):
         class TestModule(torch.nn.Module):
@@ -397,8 +399,7 @@ class OnnxModelTest(unittest.TestCase):
         torch_model = TestModule()  # type: ignore
         torch_model.train(False)
         H, W = 64, 64
-        _test_torch_model_single_io(torch_model, (1,1,H,W), (1, H, W))  # type: ignore
-
+        _test_torch_model_single_io(torch_model, (1, 1, H, W), (1, H, W))  # type: ignore
 
     def test_bachnorm_after_reshape(self):  # type: () -> None
         class Net(nn.Module):
@@ -451,7 +452,7 @@ class OnnxModelTest(unittest.TestCase):
 
     def test_fc_plus_convenet(self):  # type: () -> None
         class Net(nn.Module):
-            def __init__(self, channel_size = 1, output_h = 16, output_w = 16, filter_num = 32, latent_size = 16):
+            def __init__(self, channel_size=1, output_h=16, output_w=16, filter_num=32, latent_size=16):
                 super(Net, self).__init__()
                 self.channel_size = channel_size
                 self.output_h = output_h
@@ -492,7 +493,6 @@ class OnnxModelTest(unittest.TestCase):
         torch_model.train(False)
         _test_torch_model_single_io(torch_model, (1, 16), (1, 1, 16))  # type: ignore
 
-
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
     def test_conv1d_pool1d(self, minimum_ios_deployment_target='13'):
@@ -500,7 +500,7 @@ class OnnxModelTest(unittest.TestCase):
             def __init__(self):
                 super(Net, self).__init__()
                 self.conv1 = nn.Conv1d(in_channels=4,
-                                      out_channels=32, kernel_size=3, stride=1, padding=1)
+                                       out_channels=32, kernel_size=3, stride=1, padding=1)
                 self.conv2 = nn.Conv1d(in_channels=32,
                                        out_channels=64, kernel_size=3, stride=1, padding=1)
 
@@ -533,11 +533,31 @@ class OnnxModelTest(unittest.TestCase):
         torch_model.train(False)
 
         # opset <= 9
-        _test_torch_model_single_io(torch_model, (10, 10), (10, 10),
+        _test_torch_model_single_io(torch_model, (10, 10), (10, 10), opset_version=9,
                                     minimum_ios_deployment_target=minimum_ios_deployment_target)
         # opset > 9
-        _test_torch_model_single_io(torch_model, (10, 10), (10, 10), opset_version=10,
+        _test_torch_model_single_io(torch_model, (10, 10), (10, 10), opset_version=11,
                                     minimum_ios_deployment_target=minimum_ios_deployment_target)
+
+    @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
+                     'macOS 10.15+ required. Skipping test.')
+    def test_range(self, minimum_ios_deployment_target='13'):
+        B, C, H, W = 1, 1, 64, 64
+
+        class Net(nn.Module):
+            def __init__(self):
+                super(Net, self).__init__()
+
+            def forward(self, x):
+                h, w = x.shape[2:]
+                rr = torch.arange(C * h * w).view(1, C, h, w)
+                return rr * x
+
+        torch_model = Net()  # type: ignore
+        torch_model.train(False)
+        _test_torch_model_single_io(torch_model, (B, C, H, W), (C, H, W),
+                                    minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+
 
 class ReshapeTransposeTests(unittest.TestCase):
     '''
@@ -553,6 +573,7 @@ class ReshapeTransposeTests(unittest.TestCase):
         --> transpose [0,1,4,2,5,3] ---> (1, sh, h, sw, w, c/(sh*sw))
         --> reshape ---> (1, c/(s1*s2), sh*h, sw*w)
         '''
+
         class Net(nn.Module):
             def __init__(self, upscale_factor=3):
                 super(Net, self).__init__()
@@ -572,6 +593,7 @@ class ReshapeTransposeTests(unittest.TestCase):
         --> transpose [0,1,4,2,5,3] ---> (1, sh, h, sw, w, c/(sh*sw))
         --> reshape ---> (1, c/(sh*sw), sh*h, sw*w)
         '''
+
         class Net(nn.Module):
             def __init__(self, C=12, H=4, W=6, sh=3, sw=2):
                 super(Net, self).__init__()
@@ -583,7 +605,7 @@ class ReshapeTransposeTests(unittest.TestCase):
 
             def forward(self, x):
                 y1 = x.view(1, self.C // (self.sh * self.sw), self.sh, self.sw, self.H, self.W).contiguous()
-                y2 = y1.permute(0,1,4,2,5,3).contiguous()
+                y2 = y1.permute(0, 1, 4, 2, 5, 3).contiguous()
                 y3 = y2.view(1, self.C // (self.sh * self.sw), self.sh * self.H, self.sw * self.W).contiguous()
                 return y3
 
@@ -597,6 +619,7 @@ class ReshapeTransposeTests(unittest.TestCase):
         --> transpose [0,3,5,1,2,4] ---> (1, sh, sw, c/(sh*sw), h, w)
         --> reshape ---> (1, c*sh*sw, h/sh, w/sw)
         '''
+
         class Net(nn.Module):
             def __init__(self, C=12, H=4, W=6, sh=2, sw=3):
                 super(Net, self).__init__()
@@ -608,7 +631,7 @@ class ReshapeTransposeTests(unittest.TestCase):
 
             def forward(self, x):
                 y1 = x.view(1, self.C // (self.sh * self.sw), self.H, self.sh, self.W, self.sw).contiguous()
-                y2 = y1.permute(0,3,5,1,2,4).contiguous()
+                y2 = y1.permute(0, 3, 5, 1, 2, 4).contiguous()
                 y3 = y2.view(1, self.C * (self.sh * self.sw), self.H // self.sh, self.W // self.sw).contiguous()
                 return y3
 
@@ -622,6 +645,7 @@ class ReshapeTransposeTests(unittest.TestCase):
         --> transpose [0,1,2,4,3,5] ---> (1, c, h/sh, w/sw, sh, sw)
         --> reshape ---> (1, c*sh*sw, h/sh, w/sw)
         '''
+
         class Net(nn.Module):
             def __init__(self, C=12, H=4, W=6, sh=2, sw=3):
                 super(Net, self).__init__()
@@ -633,7 +657,7 @@ class ReshapeTransposeTests(unittest.TestCase):
 
             def forward(self, x):
                 y1 = x.view(1, self.C, self.H // self.sh, self.sh, self.W // self.sw, self.sw).contiguous()
-                y2 = y1.transpose(4,3).contiguous()
+                y2 = y1.transpose(4, 3).contiguous()
                 y3 = y2.view(1, self.C * (self.sh * self.sw), self.H // self.sh, self.W // self.sw).contiguous()
                 return y3
 
@@ -641,10 +665,117 @@ class ReshapeTransposeTests(unittest.TestCase):
         torch_model.train(False)
         _test_torch_model_single_io(torch_model, (1, 12, 4, 6), (12, 4, 6))  # type: ignore
 
+    @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
+                     'macOS 10.15+ required. Skipping test.')
+    def test_padding_functional(self, minimum_ios_deployment_target='13'):
+        class Net(nn.Module):
+            def __init__(self):
+                super(Net, self).__init__()
+                # nn.ZeroPad2d
+                self.pad_op = nn.ConstantPad2d(1, 0)
+
+            def forward(self, x):
+                return self.pad_op(x)
+
+        torch_model = Net()  # type: ignore
+        torch_model.train(False)
+        _test_torch_model_single_io(torch_model, (1, 3, 5, 5), (3, 5, 5), opset_version=11,
+                                    minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+
+    @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
+                     'macOS 10.15+ required. Skipping test.')
+    def test_unfold(self, minimum_ios_deployment_target='13'):
+        k = 3
+
+        class Net(nn.Module):
+            def __init__(self):
+                super(Net, self).__init__()
+                self.unfold = nn.Unfold((3, 5), padding=(1, 2))
+
+            def forward(self, x):
+                # B, C, H, W = x.shape
+                return self.unfold(x)
+                # return self.unfold(x).view(B, k * k * C, H * W)
+
+        torch_model = Net()  # type: ignore
+        torch_model.train(False)
+        _test_torch_model_single_io(torch_model, (1, 7, 8, 16), (7, 8, 16),
+                                    opset_version=11,
+                                    # keep_initializers_as_inputs=True,
+                                    minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+
+    # @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
+    #                  'macOS 10.15+ required. Skipping test.')
+    # def test_unfold11(self, minimum_ios_deployment_target='13'):
+    #     k = 3
+    #
+    #     kh = kw = k
+    #
+    #     xx = torch.randn(1, 5, 8, 16)
+    #     B, C, H, W = xx.shape
+    #
+    #     unfold = nn.Unfold(k)
+    #     real = unfold(xx)
+    #     g_idx1 = torch.arange(0, H).view(1, 1, H, 1).expand_as(xx)
+    #     g1 = torch.gather(xx, dim=2, index=g_idx1)
+    #     g_idx2 = torch.arange(0, W).view(1, 1, 1, 1, W).expand_as(g1)
+    #     g2 = torch.gather(g1, dim=2, index=g_idx2)
+    #     g2 = g2.transpose(4, 3)
+    #     res = g2.view(B, C*kh*kw, H*W)
+    #
+    #     #         - Pad                           --> rank 4 (B, C, H, W)
+    #     #         - Gather_1(dim=2)               --> rank 5 (B, C, kh, H, W)
+    #     #         ---
+    #     #         - Gather_2(dim=4)               --> rank 6 (B, C, kh, H, kw, W)
+    #     #         - Transpose(0, 1, 2, 4, 3, 5)   --> rank 6 (B, C, kh, kw, H, W)
+    #     #         ---
+    #     #         - Reshape                       --> rank 3 (B, C*kh*kw, H*W)
+    #
+    #     class Net(nn.Module):
+    #         def __init__(self):
+    #             super(Net, self).__init__()
+    #
+    #         def forward(self, x):
+    #             B, C, H, W = x.shape
+    #             return self.unfold(x)
+    #             # return self.unfold(x).view(B, k * k * C, H * W)
+    #
+    #     torch_model = Net()  # type: ignore
+    #     torch_model.train(False)
+    #     _test_torch_model_single_io(torch_model, (1, 5, 8, 16), (5, 8, 16),
+    #                                 opset_version=11,
+    #                                 # keep_initializers_as_inputs=True,
+    #                                 minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+
+    # @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
+    #                  'macOS 10.15+ required. Skipping test.')
+    # def test_gather(self, minimum_ios_deployment_target='13'):
+    #     k = 3
+    #
+    #     class Net(nn.Module):
+    #         def __init__(self):
+    #             super(Net, self).__init__()
+    #
+    #         def forward(self, x):
+    #             B, C, H, W = x.shape
+    #             g_idx1 = torch.arange(0, H).expand_as(x)
+    #             ret = torch.gather(x, dim=2, index=g_idx1)
+    #             return ret
+    #             # return self.unfold(x).view(B, k * k * C, H*W)
+    #
+    #     torch_model = Net()  # type: ignore
+    #     torch_model.train(False)
+    #     _test_torch_model_single_io(torch_model, (1, 3, 64, 64), (3, 64, 64),
+    #                                 opset_version=11,
+    #                                 # keep_initializers_as_inputs=True,
+    #                                 minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+
+
 class UnaryOperationTests(unittest.TestCase):
     '''
     Unary Operation Test cases
     '''
+
     ## Sqrt tests
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
@@ -655,26 +786,33 @@ class UnaryOperationTests(unittest.TestCase):
 
         torch_model = Net()  # type: ignore
         torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5), minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5),
+                                    minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+
 
 class OperatorTests(unittest.TestCase):
     '''
     Operator test for Operator
     '''
+
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
     def test_repeat(self, minimum_ios_deployment_target='13'):
         class Net(nn.Module):
             def forward(self, x):
                 return x.repeat([2, 3, 1])
+
         torch_model = Net()
         torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5), minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5),
+                                    minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+
 
 class BinaryOperationTests(unittest.TestCase):
     '''
     Binary Operation Test cases
     '''
+
     ## Addition tests
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
@@ -686,7 +824,8 @@ class BinaryOperationTests(unittest.TestCase):
         y = torch.rand((18, 4, 5))
         torch_model = Net()  # type: ignore
         torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5), minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5),
+                                    minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
 
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
@@ -702,7 +841,8 @@ class BinaryOperationTests(unittest.TestCase):
 
         torch_model = Net()  # type: ignore
         torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5), minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5),
+                                    minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
 
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
@@ -714,7 +854,8 @@ class BinaryOperationTests(unittest.TestCase):
         y = 5
         torch_model = Net()  # type: ignore
         torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5), minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5),
+                                    minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
 
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
@@ -726,7 +867,8 @@ class BinaryOperationTests(unittest.TestCase):
         y = torch.rand((4, 5))
         torch_model = Net()  # type: ignore
         torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5), minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5),
+                                    minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
 
     ## Subtraction tests
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
@@ -739,7 +881,8 @@ class BinaryOperationTests(unittest.TestCase):
         y = torch.rand((18, 4, 5))
         torch_model = Net()  # type: ignore
         torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5), minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5),
+                                    minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
 
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
@@ -755,7 +898,8 @@ class BinaryOperationTests(unittest.TestCase):
 
         torch_model = Net()  # type: ignore
         torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5), minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5),
+                                    minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
 
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
@@ -767,7 +911,8 @@ class BinaryOperationTests(unittest.TestCase):
         y = 5
         torch_model = Net()  # type: ignore
         torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5), minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5),
+                                    minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
 
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
@@ -779,7 +924,8 @@ class BinaryOperationTests(unittest.TestCase):
         y = torch.rand((4, 5))
         torch_model = Net()  # type: ignore
         torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5), minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5),
+                                    minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
 
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
@@ -798,12 +944,15 @@ class BinaryOperationTests(unittest.TestCase):
 
         torch_model = Net()  # type: ignore
         torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5), minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+        _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 4, 5),
+                                    minimum_ios_deployment_target=minimum_ios_deployment_target)  # type: ignore
+
 
 class ReduceOperationTests(unittest.TestCase):
     '''
     Reduction Operation Test cases
     '''
+
     ## Reduction tests
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
@@ -815,35 +964,39 @@ class ReduceOperationTests(unittest.TestCase):
         torch_model = Net()  # type: ignore
         torch_model.train(False)
         _test_torch_model_single_io(torch_model, (18, 4, 5), (4, 5), minimum_ios_deployment_target=minimum_ios_deployment_target)
-    
+
     @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
                      'macOS 10.15+ required. Skipping test.')
     def test_reducemean(self, minimum_ios_deployment_target='13'):
         class Net(nn.Module):
             def forward(self, x):
-                return x.mean(dim=1) 
+                return x.mean(dim=1)
 
         torch_model = Net()  # type: ignore
         torch_model.train(False)
         _test_torch_model_single_io(torch_model, (18, 4, 5), (18, 5), minimum_ios_deployment_target=minimum_ios_deployment_target)
 
+
 class TransformationTests(unittest.TestCase):
     '''
     Test cases for validating transformations
     '''
-    # Upsample Test case
-    # Upsample with scalar factor is splited in Floor -> Cast -> Div -> Concat
-    # Hence, is a good measure to test Costant Propagation and removal transformation
-    @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
-                     'macOS 10.15+ required. Skipping test.')
-    def test_cast_removal_transformation(self, minimum_ios_deployment_target='13'):
-        torch_model = nn.Upsample(scale_factor=2)
-        torch_model.train(False)
-        _test_torch_model_single_io(torch_model, (1, 18, 4, 5), (1, 18, 8, 10), minimum_ios_deployment_target=minimum_ios_deployment_target)
+
+    # # Upsample Test case
+    # # Upsample with scalar factor is splited in Floor -> Cast -> Div -> Concat
+    # # Hence, is a good measure to test Costant Propagation and removal transformation
+    # @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
+    #                  'macOS 10.15+ required. Skipping test.')
+    # def test_cast_removal_transformation(self, minimum_ios_deployment_target='13'):
+    #     torch_model = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
+    #
+    #     torch_model.train(False)
+    #     _test_torch_model_single_io(torch_model, (1, 18, 4, 5), (1, 18, 8, 10),
+    #                                 minimum_ios_deployment_target=minimum_ios_deployment_target)
 
 
 if __name__ == '__main__':
     unittest.main()
-    #suite = unittest.TestSuite()
-    #suite.addTest(OnnxModelTest("test_slice"))
-    #unittest.TextTestRunner().run(suite)
+    # suite = unittest.TestSuite()
+    # suite.addTest(OnnxModelTest("test_slice"))
+    # unittest.TextTestRunner().run(suite)
