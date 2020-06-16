@@ -49,7 +49,7 @@ setup(
         'click',
         'numpy',
         'sympy',
-        'onnx>=1.5.0',
+        'onnx>=1.7.0',
         'typing>=3.6.4',
         'typing-extensions>=3.6.2.1',
         'coremltools>=3.4',
