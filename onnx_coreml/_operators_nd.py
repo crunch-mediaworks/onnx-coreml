@@ -1522,9 +1522,9 @@ def _convert_randomnormallike(builder, node, graph, err):
     https://github.com/apple/coremltools/blob/655b3be5cc0d42c3c4fa49f0f0e4a93a26b3e492/mlmodel/format/NeuralNetwork.proto#L4434
     '''
     # Ignoring attribute `dtype` as CoreML internally represents tensors into 'Float'
-    mean = node.attributes.get('mean', 0.0)
-    scale = node.attributes.get('scale', 1.0)
-    seed = node.attributes.get('seed', -1)
+    mean = node.attrs.get('mean', 0.0)
+    scale = node.attrs.get('scale', 1.0)
+    seed = node.attrs.get('seed', -1)
 
     builder.add_random_normal_like(
         name=node.name,
@@ -1550,16 +1550,16 @@ def _convert_randomuniformlike(builder, node, graph, err):
     https://github.com/apple/coremltools/blob/655b3be5cc0d42c3c4fa49f0f0e4a93a26b3e492/mlmodel/format/NeuralNetwork.proto#L4503
     '''
     # Ignoring attribute `dtype` as CoreML internally represents tensors into 'Float'
-    mean = node.attributes.get('mean', 0.0)
-    scale = node.attributes.get('scale', 1.0)
-    seed = node.attributes.get('seed', -1)
+    minval = node.attrs.get('low', 0.0)
+    maxval = node.attrs.get('high', 1.0)
+    seed = node.attrs.get('seed', -1)
 
     builder.add_random_uniform_like(
         name=node.name,
         input_name=node.inputs[0],
         output_name=node.outputs[0],
-        mean=mean,
-        stddev=scale,
+        minval=minval,
+        maxval=maxval,
         seed=seed
     )
 

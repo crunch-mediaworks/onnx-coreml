@@ -531,7 +531,7 @@ class PytorchUnfoldFuser(NodesFuser):
                    node_gather1.inputs,
                    [op1_name + '_out'])
         op1.input_tensors = node_gather1.input_tensors
-        graph.shape_dict[op1.outputs[0]] = (B, C, kh, H1, W0)
+        # graph.shape_dict[op1.outputs[0]] = (B, C, kh, H1, W0)
 
         # ----
         # - Reshape_1               --> rank 3 (B, C*kh*H1, W0)
@@ -542,8 +542,6 @@ class PytorchUnfoldFuser(NodesFuser):
                    [op1.outputs[0], op2_shape_name],
                    [op2_name + '_out'])
         op2.input_tensors[op2_shape_name] = np.asarray([B, C * kh * H1, W0])
-        # graph.shape_dict[op2_shape_name] = (3,)
-        graph.shape_dict[op2.outputs[0]] = (B, C * kh * H1, W0)
 
         # ----
         # - Gather_2(dim=2)         --> rank 4 (B, C*kh*H1, kw, W1)
@@ -552,7 +550,6 @@ class PytorchUnfoldFuser(NodesFuser):
                    {'axis': 2},
                    [op2.outputs[0], node_gather2.inputs[1]],
                    [op3_name + '_out'])
-        graph.shape_dict[op3.outputs[0]] = (B, C * kh * H1, kw, W2)
         op3.input_tensors = node_gather2.input_tensors
         # ----
         # - Transpose_1(0, 1, 3, 2) --> rank 4 (B, C*kh*H1, W2, kw)
@@ -561,7 +558,6 @@ class PytorchUnfoldFuser(NodesFuser):
                    {'perm': np.asarray([0, 1, 3, 2])},
                    [op3.outputs[0]],
                    [op4_name + '_out'])
-        graph.shape_dict[op4.outputs[0]] = (B, C * kh * H1, W2, kw)
 
         # ----
         # - Reshape_2               --> rank 4 (B, C*kh, H1*W2, kw)
@@ -572,7 +568,6 @@ class PytorchUnfoldFuser(NodesFuser):
                    [op4.outputs[0], op5_shape_name],
                    [op5_name + '_out'])
         op5.input_tensors[op5_shape_name] = np.asarray([B, C * kh, H1 * W2, kw])
-        graph.shape_dict[op5.outputs[0]] = (B, C * kh, H1 * W2, kw)
 
         # - Transpose_2(0, 1, 3, 2) --> rank 4 (B, C*kh, kw, H1*W2)
         op6_name = self.get_unique_edge_name(graph, op_name + '_op_transpose2')
@@ -580,7 +575,6 @@ class PytorchUnfoldFuser(NodesFuser):
                    {'perm': np.asarray([0, 1, 3, 2])},
                    [op5.outputs[0]],
                    [op6_name + '_out'])
-        graph.shape_dict[op6.outputs[0]] = (B, C * kh, kw, H1 * W2)
 
         # - Reshape_3               --> rank 3 (B, C*kh*kw, H1*W2)
         op7 = node_reshape
