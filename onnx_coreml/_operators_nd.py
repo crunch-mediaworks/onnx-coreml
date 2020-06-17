@@ -1752,6 +1752,12 @@ def _convert_reshape(builder, node, graph, err):
     if shape_node in node.input_tensors:
         output_shape = node.input_tensors[shape_node].astype(np.int64)
 
+        # Reshape to zero size is fine in ONNX but invalid in CoreML
+        if output_shape[0] == 0:
+            input_shape = graph.shape_dict[node.inputs[0]]
+            output_shape[0] = input_shape[0]
+            graph.shape_dict[shape_node] = output_shape
+
         # if rank is same, then call rank preserving reshape
         if node.inputs[0] not in graph.shape_dict:
             # If Input shape is not present and output shape is known

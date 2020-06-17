@@ -443,7 +443,8 @@ def convert(model,  # type: Union[onnx.ModelProto, Text]
          - (Supported features: https://github.com/apple/coremltools/releases/tag/v2.0)
         iSO 13 (CoreML 3.0)
          - (Supported features: https://github.com/apple/coremltools/releases/tag/3.0-beta6)
-
+    preoptimize_graph: bool
+        Run ONNX-simplifier before conversion
     Returns
     -------
     model: A coreml model.
@@ -502,17 +503,6 @@ def convert(model,  # type: Union[onnx.ModelProto, Text]
 
     if preoptimize_graph:
         try:
-            # optimizers_list = ['eliminate_deadend', 'eliminate_identity', 'eliminate_nop_dropout',
-            #                    'eliminate_nop_monotone_argmax', 'eliminate_nop_pad',
-            #                    'extract_constant_to_initializer', 'eliminate_unused_initializer',
-            #                    'eliminate_nop_transpose', 'fuse_add_bias_into_conv',
-            #                    # https://github.com/daquexian/onnx-simplifier/issues/31
-            #                    # 'fuse_consecutive_concats',
-            #                    'fuse_consecutive_log_softmax',
-            #                    'fuse_consecutive_reduce_unsqueeze', 'fuse_consecutive_squeezes',
-            #                    'fuse_consecutive_transposes', 'fuse_matmul_add_bias_into_gemm',
-            #                    'fuse_pad_into_conv', 'fuse_transpose_into_gemm']
-            # onnx_model = onnx.optimizer.optimize(onnx_model, optimizers_list)
             onnx_model,onnx_model_check = simplify_onnx_graph(onnx_model, perform_optimization=False)
             if DEBUG:
                 onnx.save(onnx_model,'/tmp/simplified.onnx')
