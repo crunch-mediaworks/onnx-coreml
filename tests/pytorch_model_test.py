@@ -252,42 +252,42 @@ class OnnxModelTest(unittest.TestCase):
         torch_model.train(False)
         _test_torch_model_single_io(torch_model, (3, 2, 3), (3, 2, 3))  # type: ignore
 
-    # @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
-    #                  'macOS 10.15+ required. Skipping test.')
-    # def test_lstm(self):  # type: () -> None
-    #     class Net(nn.Module):
-    #         def __init__(self):
-    #             super(Net, self).__init__()
-    #             self.lstm = nn.LSTM(input_size=256,
-    #                                 hidden_size=64,
-    #                                 num_layers=1)
-    #
-    #         def forward(self, x):
-    #             y = self.lstm(x)
-    #             return y
-    #
-    #     torch_model = Net()  # type: ignore
-    #     torch_model.train(False)
-    #     _test_torch_model_single_io(torch_model, (3, 1, 256), (3, 1, 256), minimum_ios_deployment_target='13')  # type: ignore
+    @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
+                     'macOS 10.15+ required. Skipping test.')
+    def test_lstm(self):  # type: () -> None
+        class Net(nn.Module):
+            def __init__(self):
+                super(Net, self).__init__()
+                self.lstm = nn.LSTM(input_size=256,
+                                    hidden_size=64,
+                                    num_layers=1)
 
-    # @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
-    #                  'macOS 10.15+ required. Skipping test.')
-    # def test_bidirlstm(self):  # type: () -> None
-    #     class Net(nn.Module):
-    #         def __init__(self):
-    #             super(Net, self).__init__()
-    #             self.lstm = nn.LSTM(input_size=256,
-    #                             hidden_size=64,
-    #                             num_layers=1,
-    #                             bidirectional=True)
-    #
-    #         def forward(self, x):
-    #             y = self.lstm(x)
-    #             return y
-    #
-    #     torch_model = Net()  # type: ignore
-    #     torch_model.train(False)
-    #     _test_torch_model_single_io(torch_model, (3, 1, 256), (3, 1, 256), minimum_ios_deployment_target='13')  # type: ignore
+            def forward(self, x):
+                y = self.lstm(x)
+                return y
+
+        torch_model = Net()  # type: ignore
+        torch_model.train(False)
+        _test_torch_model_single_io(torch_model, (3, 1, 256), (3, 1, 256), minimum_ios_deployment_target='13')  # type: ignore
+
+    @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
+                     'macOS 10.15+ required. Skipping test.')
+    def test_bidirlstm(self):  # type: () -> None
+        class Net(nn.Module):
+            def __init__(self):
+                super(Net, self).__init__()
+                self.lstm = nn.LSTM(input_size=256,
+                                hidden_size=64,
+                                num_layers=1,
+                                bidirectional=True)
+
+            def forward(self, x):
+                y = self.lstm(x)
+                return y
+
+        torch_model = Net()  # type: ignore
+        torch_model.train(False)
+        _test_torch_model_single_io(torch_model, (3, 1, 256), (3, 1, 256), minimum_ios_deployment_target='13')  # type: ignore
 
     # @unittest.skipIf(macos_version() < MIN_MACOS_VERSION_10_15,
     #                  'macOS 10.15+ required. Skipping test.')
