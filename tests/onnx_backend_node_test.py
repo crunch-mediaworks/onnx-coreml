@@ -13,7 +13,7 @@ import numpy
 from onnx_coreml._backend import CoreMLBackend, CoreMLBackendND
 from onnx_coreml.converter import SupportedVersion
 
-from coremltools.models.utils import macos_version
+from coremltools.models.utils import _macos_version as macos_version
 
 # Default target iOS
 MINIMUM_IOS_DEPLOYMENT_TARGET = '13'

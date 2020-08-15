@@ -32,7 +32,8 @@ from ._transformers import ConvAddFuser, DropoutRemover, \
     DeadCodeElimination, PaddingOpRemover, PytorchUnfoldFuser
 
 # ML model passes
-from coremltools.converters.nnssa.coreml.graph_pass.mlmodel_passes import remove_disconnected_layers, transform_conv_crop
+
+from coremltools.converters.mil.backend.nn.passes.mlmodel_passes import remove_disconnected_layers, transform_conv_crop
 
 from ._error_utils import ErrorHandling
 from .graph_viz import plot_graph # type: ignore

@@ -2,7 +2,7 @@ import numpy as np
 import unittest
 import coremltools.models.datatypes as datatypes
 from coremltools.models import neural_network as neural_network
-from coremltools.converters.nnssa.coreml.graph_pass.mlmodel_passes import remove_disconnected_layers
+from coremltools.converters.mil.backend.nn.passes.mlmodel_passes import remove_disconnected_layers
 
 
 class MLModelPassesTest(unittest.TestCase):

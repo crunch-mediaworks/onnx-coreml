@@ -12,7 +12,7 @@ import onnx.backend.test
 from onnx_coreml._backend import CoreMLBackend, CoreMLBackendND
 from onnx_coreml.converter import SupportedVersion
 
-from coremltools.models.utils import macos_version
+from coremltools.models.utils import _macos_version as macos_version
 
 # Default target iOS
 MINIMUM_IOS_DEPLOYMENT_TARGET = '13'
@@ -25,7 +25,7 @@ if macos_version() < MIN_MACOS_VERSION_10_15:
 
 if not SupportedVersion.ios_support_check(MINIMUM_IOS_DEPLOYMENT_TARGET):
     raise ValueError(
-        "Invalid Target iOS version provided. Valid target iOS: {}".format(supported_ios_version)
+        "Invalid Target iOS version provided. Valid target iOS: {}".format(MINIMUM_IOS_DEPLOYMENT_TARGET)
     )
 
 # import all test cases at global scope to make them visible to python.unittest

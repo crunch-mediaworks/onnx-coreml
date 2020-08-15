@@ -15,7 +15,7 @@ from tests._test_utils import _test_single_node, \
     _random_array, _conv_pool_output_size, \
     _onnx_create_single_node_model, _assert_outputs
 
-from coremltools.models.utils import macos_version
+from coremltools.models.utils import _macos_version as macos_version
 
 MIN_MACOS_VERSION_10_15 = (10, 15)
 

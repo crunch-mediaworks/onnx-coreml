@@ -18,7 +18,7 @@ import tempfile
 import os
 import pytest
 
-from coremltools.models.utils import macos_version
+from coremltools.models.utils import _macos_version as macos_version
 
 np.random.seed(10)
 torch.manual_seed(10)
